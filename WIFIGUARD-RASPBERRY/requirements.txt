@@ -1,0 +1,18 @@
+# 엣지 공통 의존성 (개발 PC + 라즈베리파이).
+# 원본: Guardian Angel Alert/backend/requirements.txt 에서 클라우드 소관을 뺀 것.
+#
+#   제외: torch  — 낙상 DL 추론은 클라우드가 한다 (명세 §1.3)
+#   제외: fastapi / uvicorn — 로컬 웹 UI는 승계하지 않는다 (명세 §1.3)
+#         단 로컬 HTTP 캘리브레이션 엔드포인트를 남기기로 하면 되살려야 한다 (§4 Phase 2)
+
+numpy>=1.26
+scipy>=1.14
+numba>=0.61
+ssqueezepy==0.6.6     # ★ ARM64 휠 가용성 불확실. features/common.py의 fallback_cwt 경로를 반드시 유지할 것 (R2)
+pyserial>=3.5         # 현행 UART 폴백 경로 (transport/serial_reader 계열)
+
+# --- 아래는 신규 모듈이 들어오면 필요해진다 (현재 코드 없음) ---
+paho-mqtt>=2.1        # mqtt/publisher.py, mqtt/command.py
+msgpack>=1.1          # mqtt/codec.py — 직렬화
+zstandard>=0.23       # mqtt/codec.py — 압축
+tomli>=2.0; python_version < "3.11"   # config.py — TOML 로딩

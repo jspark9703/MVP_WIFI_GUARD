@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CSI Multi-Port Collector</title>
+  <style>
+    :root {
+      --bg: #f3f4f6; --panel: #fff; --text: #1f2937; --muted: #6b7280;
+      --ok: #059669; --bad: #dc2626; --line: #e5e7eb; --accent: #2563eb;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Inter,"Noto Sans KR",system-ui,sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width:1400px; margin:0 auto; padding:20px; }
+    h1 { margin:0 0 18px; font-size:22px; }
+    .dashboard {
+      display:grid;
+      grid-template-columns:340px 1fr;
+      grid-template-rows:auto auto;
+      gap:14px;
+      align-items:start;
+    }
+    .dashboard .col-left { display:flex; flex-direction:column; gap:14px; }
+    .dashboard .col-right { display:flex; flex-direction:column; gap:14px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+    @media(max-width:860px) {
+      .dashboard { grid-template-columns:1fr; }
+    }
+    .card h2 { margin:0 0 12px; font-size:16px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    label { font-size:13px; font-weight:600; }
+    input[type="text"] {
+      border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+      font-size:14px; outline:none; flex:1; min-width:140px;
+    }
+    input:focus { border-color:var(--accent); }
+    button {
+      border:1px solid var(--line); background:#f9fafb; border-radius:8px;
+      padding:12px 20px; font-size:15px; font-weight:600; cursor:pointer;
+      min-width:100px;
+    }
+    button:hover { border-color:var(--accent); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .pill { font-size:13px; font-weight:600; padding:4px 10px; border-radius:6px; }
+    .pill.running { color:var(--ok); border:1px solid rgba(5,150,105,.3); }
+    .pill.stopped { color:var(--bad); border:1px solid rgba(220,38,38,.3); }
+    .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    .muted { color:var(--muted); }
+    .kv-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+    .kv-item { background:#f9fafb; border:1px solid var(--line); border-radius:8px; padding:8px; }
+    .kv-key { display:block; color:var(--muted); font-size:11px; margin-bottom:2px; }
+    .kv-val { display:block; font-size:14px; font-weight:600; }
+    .paths { font-size:12px; color:var(--muted); word-break:break-all; line-height:1.5; margin-top:8px; }
+    .stat-row { display:flex; gap:20px; margin-top:8px; font-size:13px; }
+    .stat-row span { font-weight:600; }
+    canvas { display:block; width:100%; border-radius:6px; background:#0f172a; }
+    .canvas-label { font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .data-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .data-table th { text-align:left; padding:6px 8px; border-bottom:2px solid var(--line); color:var(--muted); font-weight:600; }
+    .data-table td { padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+    .data-table tr:last-child td { border-bottom:none; }
+    .data-table tr:hover td { background:#f9fafb; }
+    .file-pair { display:flex; flex-direction:column; gap:2px; }
+    .file-chip { font-size:11px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      background:#f1f5f9; border:1px solid var(--line); border-radius:4px; padding:2px 6px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:380px; }
+    .btn-del { background:#fff0f0; border:1px solid #fca5a5; color:var(--bad);
+      border-radius:6px; padding:4px 10px; font-size:12px; font-weight:600; cursor:pointer; min-width:auto; }
+    .btn-del:hover { background:#fee2e2; }
+    .port-input-row { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+    .port-input-row input { flex:1; }
+    .btn-remove-port { background:#ffe0e0; border:1px solid #ffb3b3; color:var(--bad);
+      border-radius:6px; padding:8px 12px; font-size:12px; font-weight:600; cursor:pointer; min-width:auto; }
+    .btn-remove-port:hover { background:#ffcccc; }
+    @media(max-width:600px) {
+      .wrap { padding:12px; }
+      .file-chip { max-width:200px; }
+      .dashboard { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="dashboard">
+    <!-- Left column: Control + Data List -->
+    <div class="col-left">
+      <!-- Control -->
+      <div class="card">
+        <div class="row" style="margin-bottom:10px;">
+          <span id="pill" class="pill stopped">Stopped</span>
+        </div>
+        <div id="ports-container"></div>
+        <div class="row" style="margin-bottom:8px;">
+          <button id="btn-add-port" type="button" style="flex:1; background:#e8f5e9; border:1px solid #81c784; color:#2e7d32;">+ 포트 추가</button>
+        </div>
+        <div class="row" style="margin-bottom:8px;">
+          <label style="min-width:90px;">Prefix Folder</label>
+          <input id="inp-prefix" type="text" placeholder="e.g. test/hello/world (optional)" maxlength="200" />
+        </div>
+        <div class="row" style="margin-bottom:10px;">
+          <label style="min-width:90px;">Suffix</label>
+          <input id="inp-suffix" type="text" placeholder="(optional)" maxlength="60" />
+        </div>
+        <div class="row">
+          <button id="btn-toggle">Start</button>
+        </div>
+        <div id="paths" class="paths"></div>
+      </div>
+
+      <!-- Collected Data List -->
+      <div class="card">
+        <h2>수집된 데이터 목록</h2>
+        <div id="data-list-body"><div class="muted">데이터 없음</div></div>
+      </div>
+    </div>
+
+    <!-- Right column: ESP CSI (Multi Port) -->
+    <div class="col-right" id="esp-cards-container"></div>
+  </div>
+</div>
+
+<script>
+const dataListBody = document.getElementById("data-list-body");
+const pill       = document.getElementById("pill");
+const btnToggle  = document.getElementById("btn-toggle");
+const inpPrefix  = document.getElementById("inp-prefix");
+const inpSuffix  = document.getElementById("inp-suffix");
+const pathsEl    = document.getElementById("paths");
+const portsContainer = document.getElementById("ports-container");
+const btnAddPort = document.getElementById("btn-add-port");
+const espCardsContainer = document.getElementById("esp-cards-container");
+
+let running = false;
+let ws = null;
+let reconnTimer = null;
+let portInputs = [];
+
+function createPortInput(idx) {
+  const row = document.createElement("div");
+  row.className = "port-input-row";
+  row.id = `port-row-${idx}`;
+  const label = document.createElement("label");
+  label.style.minWidth = "90px";
+  label.textContent = `ESP Port ${idx + 1}`;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = idx === 0 ? "COM3" : "COM4";
+  input.className = `port-input port-${idx}`;
+  input.dataset.idx = idx;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "btn-remove-port";
+  btn.textContent = "제거";
+  btn.onclick = () => removePort(idx);
+  btn.style.display = portInputs.length > 1 ? "block" : "none";
+  row.appendChild(label);
+  row.appendChild(input);
+  row.appendChild(btn);
+  portsContainer.appendChild(row);
+  return input;
+}
+
+function addPort() {
+  const idx = portInputs.length;
+  const input = createPortInput(idx);
+  portInputs.push(input);
+  updateRemoveButtons();
+}
+
+function removePort(idx) {
+  const row = document.getElementById(`port-row-${idx}`);
+  if (row) row.remove();
+  portInputs.splice(idx, 1);
+  portInputs.forEach((inp, i) => {
+    inp.dataset.idx = i;
+    const rowEl = document.getElementById(`port-row-${i}`);
+    if (rowEl) rowEl.id = `port-row-${i}`;
+  });
+  updateRemoveButtons();
+}
+
+function updateRemoveButtons() {
+  portInputs.forEach((inp, i) => {
+    const row = document.getElementById(`port-row-${i}`);
+    const btn = row?.querySelector(".btn-remove-port");
+    if (btn) btn.style.display = portInputs.length > 1 ? "block" : "none";
+  });
+}
+
+function updateEspCards(espLabels) {
+  espCardsContainer.innerHTML = "";
+  espLabels.forEach(label => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.id = `card-${label}`;
+    const h2 = document.createElement("h2");
+    h2.textContent = `${label.toUpperCase()} CSI`;
+    const statRow = document.createElement("div");
+    statRow.className = "stat-row";
+    const statDiv = document.createElement("div");
+    statDiv.textContent = `Packets: `;
+    const span = document.createElement("span");
+    span.id = `esp-count-${label}`;
+    span.className = "mono";
+    span.textContent = "0";
+    statDiv.appendChild(span);
+    statRow.appendChild(statDiv);
+    const canvasDiv = document.createElement("div");
+    canvasDiv.style.marginTop = "12px";
+    const label2 = document.createElement("div");
+    label2.className = "canvas-label";
+    label2.textContent = "CSI 진폭 히트맵 (서브캐리어 × 시간)";
+    const canvas = document.createElement("canvas");
+    canvas.id = `csi-canvas-${label}`;
+    canvas.height = 128;
+    canvasDiv.appendChild(label2);
+    canvasDiv.appendChild(canvas);
+    card.appendChild(h2);
+    card.appendChild(statRow);
+    card.appendChild(canvasDiv);
+    espCardsContainer.appendChild(card);
+  });
+}
+
+function setRunning(r) {
+  running = r;
+  pill.textContent = r ? "Running" : "Stopped";
+  pill.className   = "pill " + (r ? "running" : "stopped");
+  btnToggle.textContent = r ? "Stop" : "Start";
+  portInputs.forEach(inp => inp.disabled = r);
+  inpPrefix.disabled = r;
+  inpSuffix.disabled = r;
+  btnAddPort.disabled = r;
+}
+
+function renderPaths(status) {
+  const parts = [];
+  Object.keys(status.esp_paths || {}).sort().forEach(label => {
+    if (status.esp_paths[label]) {
+      parts.push(label.toUpperCase() + ": " + status.esp_paths[label]);
+    }
+  });
+  pathsEl.textContent = parts.join("\n");
+}
+
+async function json_(url, opts={}) {
+  const r = await fetch(url, opts);
+  let d = null; try { d = await r.json(); } catch(_) {}
+  if (!r.ok) throw new Error(d?.detail || r.statusText);
+  return d;
+}
+
+async function refreshStatus() {
+  try {
+    const s = await json_("/collector/status");
+    setRunning(s.running);
+    updateEspCards(Object.keys(s.esp_packet_counts || {}).sort());
+    Object.keys(s.esp_packet_counts || {}).forEach(label => {
+      const el = document.getElementById(`esp-count-${label}`);
+      if (el) el.textContent = s.esp_packet_counts[label] ?? 0;
+    });
+    renderPaths(s);
+  } catch(e) { console.error(e); }
+}
+
+async function toggle() {
+  btnToggle.disabled = true;
+  try {
+    if (running) {
+      await json_("/collector/stop", { method:"POST" });
+    } else {
+      const ports = portInputs.map(inp => inp.value.trim()).filter(p => p);
+      if (ports.length === 0) { alert("최소 1개 이상의 ESP 포트를 입력하세요"); return; }
+      const uniquePorts = new Set(ports);
+      if (uniquePorts.size !== ports.length) { alert("중복된 포트가 있습니다"); return; }
+      await json_("/collector/start", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ esp_ports: ports, prefix_folder: inpPrefix.value.trim() || null, file_suffix: inpSuffix.value.trim() || null })
+      });
+    }
+    await refreshStatus();
+    await refreshDataList();
+  } catch(e) { alert("Error: " + e.message); }
+  finally { btnToggle.disabled = false; }
+}
+
+function connectWs() {
+  if (ws) return;
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws/live`);
+  ws.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    setRunning(d.running);
+    Object.keys(d.esp_packet_counts || {}).forEach(label => {
+      const el = document.getElementById(`esp-count-${label}`);
+      if (el) el.textContent = d.esp_packet_counts[label] ?? 0;
+    });
+    if (d.running) {
+      Object.keys(d.csi_amplitudes || {}).forEach(label => {
+        if (d.csi_amplitudes[label]) updateCsi(label, d.csi_amplitudes[label]);
+      });
+    }
+  };
+  ws.onclose = () => { ws = null; reconnTimer = setTimeout(connectWs, 1500); };
+  ws.onerror = () => { ws?.close(); };
+}
+
+// ── CSI Heatmap ────────────────────────────────────────────────────
+const CSI_COLS = 200;
+let csiBuffers = {};
+
+function ampToColor(v, max) {
+  if (max === 0) return "rgb(0,0,0)";
+  const t = Math.min(v / max, 1);
+  if (t < 0.25) {
+    const s = t / 0.25;
+    return `rgb(0,0,${Math.round(s * 255)})`;
+  } else if (t < 0.5) {
+    const s = (t - 0.25) / 0.25;
+    return `rgb(0,${Math.round(s * 255)},255)`;
+  } else if (t < 0.75) {
+    const s = (t - 0.5) / 0.25;
+    return `rgb(${Math.round(s * 255)},255,${Math.round((1 - s) * 255)})`;
+  } else {
+    const s = (t - 0.75) / 0.25;
+    return `rgb(255,${Math.round((1 - s) * 255 + s * 255)},${Math.round(s * 255)})`;
+  }
+}
+
+function drawCsiHeatmap(portId) {
+  const canvas = document.getElementById(`csi-canvas-${portId}`);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const buffer = csiBuffers[portId] || [];
+
+  const W = canvas.clientWidth || 860;
+  const rows = buffer.length;
+  if (rows === 0 || !buffer[0]?.length) return;
+  const subcarriers = buffer[0].length;
+
+  canvas.width = W;
+  canvas.height = subcarriers;
+
+  const cellW = W / CSI_COLS;
+  const cellH = 1;
+
+  let maxAmp = 0;
+  for (const row of buffer) for (const v of row) if (v > maxAmp) maxAmp = v;
+
+  const xOffset = Math.max(0, CSI_COLS - rows);
+  for (let t = 0; t < rows; t++) {
+    const col = buffer[t];
+    for (let s = 0; s < col.length; s++) {
+      ctx.fillStyle = ampToColor(col[s], maxAmp);
+      ctx.fillRect(
+        Math.floor((xOffset + t) * cellW), s * cellH,
+        Math.ceil(cellW) + 1, cellH + 1
+      );
+    }
+  }
+}
+
+function updateCsi(portId, amplitudes) {
+  if (!amplitudes || amplitudes.length === 0) return;
+  if (!csiBuffers[portId]) csiBuffers[portId] = [];
+  csiBuffers[portId].push(amplitudes);
+  if (csiBuffers[portId].length > CSI_COLS) csiBuffers[portId].shift();
+  drawCsiHeatmap(portId);
+}
+
+// ── Data List ──────────────────────────────────────────────────────
+function basename(p) { return p.replace(/\\/g, "/").split("/").pop(); }
+
+async function refreshDataList() {
+  try {
+    const list = await json_("/data/list");
+    if (!list.length) {
+      dataListBody.innerHTML = '<div class="muted">데이터 없음</div>';
+      return;
+    }
+    const rows = list.map(s => {
+      const allFiles = Object.values(s.esp_paths || {}).filter(Boolean);
+      const chips = allFiles.map(f =>
+        `<span class="file-chip" title="${f}">${basename(f)}</span>`
+      ).join("");
+      const label = s.time_tag + (s.suffix ? ` · ${s.suffix}` : "");
+      return `<tr>
+        <td><span class="mono" style="font-size:13px;">${label}</span></td>
+        <td><div class="file-pair">${chips}</div></td>
+        <td><button class="btn-del" onclick="deleteSession('${s.session_id}')">삭제</button></td>
+      </tr>`;
+    }).join("");
+    dataListBody.innerHTML = `<table class="data-table">
+      <thead><tr><th>세션</th><th>파일</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch(e) { console.error("data list error", e); }
+}
+
+async function deleteSession(sid) {
+  if (!confirm(`세션 "${sid}" 의 파일을 삭제하시겠습니까?`)) return;
+  try {
+    await fetch(`/data/${encodeURIComponent(sid)}`, { method: "DELETE" });
+    await refreshDataList();
+  } catch(e) { alert("삭제 실패: " + e.message); }
+}
+
+btnToggle.addEventListener("click", toggle);
+btnAddPort.addEventListener("click", addPort);
+
+// Initialize with 2 ports by default
+addPort();
+addPort();
+
+refreshStatus();
+refreshDataList();
+connectWs();
+</script>
+</body>
+</html>

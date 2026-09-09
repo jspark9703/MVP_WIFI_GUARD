@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wifiguard-edge"
+version = "0.1.0"
+description = "WIFI-GUARD 엣지 게이트웨이 — CSI 수집 · 재실감지 · 피처 추출 · MQTT 업링크"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.14",
+    "numba>=0.61",
+    "ssqueezepy==0.6.6",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+pi = ["spidev>=3.6", "RPi.GPIO>=0.7.1"]
+mqtt = ["paho-mqtt>=2.1", "msgpack>=1.1", "zstandard>=0.23"]
+
+# 엔트리포인트는 __main__.py 구현 후 활성화한다.
+# [project.scripts]
+# wifiguard-edge = "wifiguard_edge.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

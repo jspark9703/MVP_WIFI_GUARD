@@ -1,0 +1,121 @@
+{
+  "status": "complete",
+  "device": "cpu",
+  "actual_test_dataset": null,
+  "validation_is_previous_test_split": true,
+  "epochs_completed": 12,
+  "best_epoch": 5,
+  "best_validation_macro_f1": 0.7925703805059827,
+  "elapsed_sec": 2230.1020825419982,
+  "label_rule": "fall if any contiguous fall interval midpoint is inside [window_start, window_end)",
+  "split": {
+    "train": {
+      "recording_count": 52,
+      "window_count": 1351,
+      "nonfall": 1279,
+      "fall": 72,
+      "fall_recording_count": 6
+    },
+    "val": {
+      "recording_count": 13,
+      "window_count": 375,
+      "nonfall": 351,
+      "fall": 24,
+      "fall_recording_count": 2
+    }
+  },
+  "initialization": {
+    "kind": "full_source_checkpoint",
+    "source_epoch": 20,
+    "source_val_metrics": {
+      "n": 23623,
+      "nonfall_count": 11587,
+      "fall_count": 12036,
+      "accuracy": 0.8840960081276722,
+      "balanced_accuracy": 0.8839639742777938,
+      "macro_f1": 0.8840306049251578,
+      "fall_precision": 0.8826967402041488,
+      "fall_recall": 0.8909106015287471,
+      "fall_f1": 0.8867846510089316,
+      "nonfall_precision": 0.8855773420479303,
+      "nonfall_recall": 0.8770173470268404,
+      "nonfall_f1": 0.8812765588413841,
+      "auroc": 0.9556594162737758,
+      "tn_nonfall": 10162,
+      "fp_nonfall_as_fall": 1425,
+      "fn_fall_as_nonfall": 1313,
+      "tp_fall": 10723
+    }
+  },
+  "new_model": {
+    "checkpoint": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/best_model.pt",
+    "train_threshold_0p5": {
+      "n": 1351,
+      "nonfall_count": 1279,
+      "fall_count": 72,
+      "accuracy": 0.9718726868985936,
+      "balanced_accuracy": 0.9785911302232647,
+      "macro_f1": 0.8869107410344523,
+      "fall_precision": 0.6574074074074074,
+      "fall_recall": 0.9861111111111112,
+      "fall_f1": 0.7888888888888889,
+      "nonfall_precision": 0.999195494770716,
+      "nonfall_recall": 0.9710711493354183,
+      "nonfall_f1": 0.9849325931800159,
+      "auroc": 0.9978281643645209,
+      "tn_nonfall": 1242,
+      "fp_nonfall_as_fall": 37,
+      "fn_fall_as_nonfall": 1,
+      "tp_fall": 71
+    },
+    "validation_threshold_0p5": {
+      "n": 375,
+      "nonfall_count": 351,
+      "fall_count": 24,
+      "accuracy": 0.9493333333333334,
+      "balanced_accuracy": 0.7982549857549858,
+      "macro_f1": 0.7925703805059827,
+      "fall_precision": 0.6,
+      "fall_recall": 0.625,
+      "fall_f1": 0.6122448979591837,
+      "nonfall_precision": 0.9742857142857143,
+      "nonfall_recall": 0.9715099715099715,
+      "nonfall_f1": 0.9728958630527818,
+      "auroc": 0.9446225071225072,
+      "tn_nonfall": 341,
+      "fp_nonfall_as_fall": 10,
+      "fn_fall_as_nonfall": 9,
+      "tp_fall": 15
+    },
+    "validation_selected_threshold": 0.468,
+    "validation_at_selected_threshold": {
+      "n": 375,
+      "nonfall_count": 351,
+      "fall_count": 24,
+      "accuracy": 0.9466666666666667,
+      "balanced_accuracy": 0.8356481481481481,
+      "macro_f1": 0.8004469987228608,
+      "fall_precision": 0.5666666666666667,
+      "fall_recall": 0.7083333333333334,
+      "fall_f1": 0.6296296296296297,
+      "nonfall_precision": 0.9797101449275363,
+      "nonfall_recall": 0.9629629629629629,
+      "nonfall_f1": 0.9712643678160919,
+      "auroc": 0.9446225071225072,
+      "tn_nonfall": 338,
+      "fp_nonfall_as_fall": 13,
+      "fn_fall_as_nonfall": 7,
+      "tp_fall": 17
+    }
+  },
+  "previous_finetuned_model_on_new_validation_labels": null,
+  "outputs": {
+    "midpoint_manifest": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/midpoint_manifest.csv",
+    "fall_interval_midpoints": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/fall_interval_midpoints.csv",
+    "split_assignments": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/split_assignments.csv",
+    "history": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/history.csv",
+    "best_model": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/best_model.pt",
+    "last_checkpoint": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/last_checkpoint.pt",
+    "validation_predictions": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/val_predictions.csv"
+  }
+}

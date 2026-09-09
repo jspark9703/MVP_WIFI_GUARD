@@ -1,0 +1,119 @@
+# 로컬 개발 스택 — AWS 계정 없이 전 구간을 재현한다.
+#
+# Mosquitto가 로컬 개발 브로커다. 운영에서는 이 자리를 AWS IoT Core가 대체하며,
+# **토픽·페이로드 계약은 동일하다** (명세 §4 Phase 0).
+#
+#   make up      /  docker compose -f compose/docker-compose.dev.yml up -d
+#   make down
+#
+# ⚠ 미검증. 애플리케이션 서비스(api/ingest/inference/...)는 코드가 아직 없으므로
+#   이 파일에는 **미들웨어만** 정의했다. 서비스는 구현되는 대로 추가한다.
+
+name: wifiguard-dev
+
+services:
+  # ── 엣지 업링크 (운영: AWS IoT Core) ──────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"   # 로컬 개발은 평문. 운영 mTLS 8883은 IoT Core가 담당
+      - "9001:9001"
+    volumes:
+      - ../infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../infra/mosquitto/acl:/mosquitto/config/acl:ro
+      - mosquitto-data:/mosquitto/data
+
+  # ── 스트림 ────────────────────────────────────────────────────────
+  kafka:
+    image: bitnami/kafka:3.9
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft 모드 — zookeeper 불필요
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"   # 토픽은 infra/kafka/ 정의로 명시 생성
+    volumes:
+      - kafka-data:/bitnami/kafka
+
+  # ── 저장 ──────────────────────────────────────────────────────────
+  # 이원화: 고빈도 시계열은 TimescaleDB, 관계형은 PostgreSQL (명세 §4 Phase 1-1)
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: "${TSDB_NAME:-wifiguard_ts}"
+      POSTGRES_USER: "${TSDB_USER:-wifiguard}"
+      POSTGRES_PASSWORD: "${TSDB_PASSWORD:?set in .env}"
+    volumes:
+      - ../infra/timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - timescale-data:/var/lib/postgresql/data
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: "${PG_NAME:-wifiguard}"
+      POSTGRES_USER: "${PG_USER:-wifiguard}"
+      POSTGRES_PASSWORD: "${PG_PASSWORD:?set in .env}"
+    volumes:
+      - ../infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres-data:/var/lib/postgresql/data
+
+  # ── WebSocket 팬아웃 (다수 클라이언트 × 다수 기기) ─────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  # ── 오브젝트 스토리지 (모델 아티팩트 · CSI/피처 윈도우) ─────────────
+  # window(피처)는 232KB/윈도우다. TimescaleDB에 넣지 않고 여기 두고 DB에는 포인터만.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9002:9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_PASSWORD:?set in .env}"
+    volumes:
+      - minio-data:/data
+
+  # ── 모델 레지스트리 ────────────────────────────────────────────────
+  # ⚠ MLflow는 이 프로젝트 어디에서도 실제로 쓰인 적이 없다. 완전한 신규 도입이다 (명세 R7).
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.19.0
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri postgresql://${PG_USER:-wifiguard}:${PG_PASSWORD}@postgres:5432/mlflow
+      --artifacts-destination s3://mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: "http://minio:9000"
+      AWS_ACCESS_KEY_ID: "${MINIO_USER:-minioadmin}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_PASSWORD}"
+    depends_on:
+      - postgres
+      - minio
+
+volumes:
+  mosquitto-data:
+  kafka-data:
+  timescale-data:
+  postgres-data:
+  redis-data:
+  minio-data:
+
+# 관측 스택(prometheus/grafana/alertmanager/loki)은 compose/docker-compose.obs.yml 로 분리.
+# Airflow는 재학습 루프(Phase 6)에 들어갈 때 추가한다 — 지금 띄워도 돌릴 DAG가 없다.

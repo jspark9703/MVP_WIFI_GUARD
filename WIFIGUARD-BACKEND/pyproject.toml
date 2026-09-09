@@ -1,0 +1,29 @@
+[project]
+name = "wifiguard-backend"
+version = "0.1.0"
+description = "WIFI-GUARD 클라우드 백엔드 — uv workspace 루트 (가상 프로젝트)"
+requires-python = ">=3.12"
+dependencies = [
+  "wifiguard-api",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "httpx>=0.27",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/db", "packages/contracts", "services/api"]
+
+[tool.uv.sources]
+wifiguard-api = { workspace = true }
+wifiguard-db = { workspace = true }
+wifiguard-contracts = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["services/api/tests"]
+addopts = "-q"

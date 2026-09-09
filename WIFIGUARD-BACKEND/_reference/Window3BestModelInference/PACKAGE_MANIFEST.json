@@ -1,0 +1,15 @@
+{
+  "package_name": "Window3BestModelInference",
+  "model": "3-second native-Hz S3+PCA-ACF dual ResNet18 fine-tuned checkpoint",
+  "checkpoint_epoch": 5,
+  "checkpoint_sha256": "b141020e7fa4af18784f16c266f658f2ccbc40082c73a1128957af335dc9fc11",
+  "window_seconds": 3.0,
+  "stride_seconds": 0.25,
+  "validation_recordings": 13,
+  "validation_windows": 375,
+  "validation_nonfall": 351,
+  "validation_fall": 24,
+  "feature_archives": 13,
+  "selected_threshold": 0.468,
+  "selected_mode_size": 5
+}

@@ -1,0 +1,48 @@
+# CSI Preprocessing Configuration
+# Used by: python scripts/preprocess.py --config config/preprocess.yaml
+
+# === Data Source ===
+data:
+  mendeley_root: "Mendeley"
+  env: [1, 2, 3]              # null = all [1, 2, 3]; specify: [1] or [1, 2]
+  subjects: [1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 21, 22, 23, 24, 25]            # null = all; specify: [1, 2, 3]
+  activities: null          # null = all; specify: [2, 5] for falls only
+  fall_only: false          # true = process only falls (A02, A05)
+
+# === Output ===
+output:
+  path: "data/preprocessed"
+  # Files saved as: {path}/E{e}_S{ss}_C{c}_A{aa}_T{tt}.npz
+
+# === Windowing ===
+window:
+  size_sec: 2.5       # Sliding window size (seconds)
+  stride_sec: 0.25    # Sliding window stride (seconds)
+
+# === Resampling ===
+resample:
+  fs_hz: 320.0
+  tolerance_ms: 2.0
+  max_interp_gap_steps: 64
+
+# === Bandpass Filter ===
+filter:
+  low_hz: 0.5         # Low cutoff frequency
+  high_hz: 80.0      # High cutoff frequency
+  order: 4            # Butterworth filter order
+
+# === Stream Selection (amfall q(h) metric) ===
+stream_selection:
+  omega: 160         # Moving variance window half-width
+  n_streams: 30       # Target number of top streams to select globally (from 90 total: 3 antennas × 30 subcarriers)
+  use_ant: [1,2]       # null = all 3 antennas; specify: [0], [0, 2], etc. to restrict to specific antennas
+
+# === PCA PC Selection ===
+pca:
+  eigenvalue_threshold: null  # null = max(eigenvalue) * 1e-3
+  max_pcs: 3                  # Maximum number of PCs to select (per AmFall spec limit)
+
+# === Run Control ===
+run:
+  max_files: null     # null = process all; specify: 5 for testing
+  skip_existing: false # true = skip already processed files

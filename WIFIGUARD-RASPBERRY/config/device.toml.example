@@ -1,0 +1,24 @@
+# 기기별 설정. 실제 파일(device.toml)은 gitignore 대상이다.
+#   cp config/device.toml.example config/device.toml
+
+[device]
+facility_id = "home-abcd1234"   # HOME 계정은 "home-{userId}" 형태. FACILITY는 시설 ID
+device_id   = "rpi-livingroom"  # 토픽: wifiguard/{facility_id}/{device_id}/...
+
+[mqtt]
+broker_host = "xxxxxxxxxx-ats.iot.ap-northeast-2.amazonaws.com"
+broker_port = 8883
+ca_cert     = "deploy/certs/AmazonRootCA1.pem"
+client_cert = "deploy/certs/device.pem.crt"
+client_key  = "deploy/certs/device.private.key"
+
+[transport]
+kind = "spi"          # "spi" (Pi 실기) | "serial" (현행 UART 폴백) | "mock" (개발 PC)
+# --- kind = "spi" ---
+spi_bus = 0
+spi_device = 0
+max_speed_hz = 10000000
+gpio_data_ready = 25  # BCM, RISING
+# --- kind = "serial" ---
+serial_port = ""      # 비우면 자동 탐지
+baudrate = 921600

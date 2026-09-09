@@ -1,0 +1,140 @@
+stages:
+
+  preprocess:
+    cmd: python scripts/preprocess.py --config config/preprocess.yaml
+    deps:
+      - scripts/preprocess.py
+      - src/dwt_coef/data_loader.py
+      - src/dwt_coef/preprocessing.py
+      - config/preprocess.yaml
+    params:
+      - config/preprocess.yaml:
+          - data.env
+          - data.subjects
+          - data.activities
+          - data.fall_only
+          - window.size_sec
+          - window.stride_sec
+          - resample.fs_hz
+          - resample.tolerance_ms
+          - filter.low_hz
+          - filter.high_hz
+          - filter.order
+          - stream_selection.omega
+          - stream_selection.n_streams
+          - stream_selection.use_ant
+          - pca.eigenvalue_threshold
+          - pca.max_pcs
+    outs:
+      - data/preprocessed/
+
+  featurize:
+    cmd: python scripts/featurization.py --config config/featurization.yaml
+    deps:
+      - scripts/featurization.py
+      - src/dwt_coef/dwt_features.py
+      - config/featurization.yaml
+      - data/preprocessed/
+    params:
+      - config/featurization.yaml:
+          - dwt.wavelet
+          - dwt.level
+          - dwt.include_entropy
+          - filter.env
+          - filter.subjects
+          - filter.activities
+          - filter.fall_only
+    outs:
+      - data/features/
+
+  # In-house ESP32-C5 data (data/raw/) - Mendeley 파이프라인과 독립. 활성화하려면
+  # 주석을 풀고 `dvc repro augment` 실행 (data/raw/ 370MB 를 DVC 가 해싱하게 됨).
+  # augment_90:
+  #   cmd: python scripts/08_augmentation.py --config config/augmentation_90.yaml
+  #   deps:
+  #     - scripts/08_augmentation.py
+  #     - src/dwt_coef/inhouse_loader.py
+  #     - src/dwt_coef/augmentation.py
+  #     - config/augmentation_90.yaml
+  #     - data/raw/
+  #   params:
+  #     - config/augmentation_90.yaml:
+  #         - data.persons
+  #         - data.takes
+  #         - data.labeled_only
+  #         - augment.n_patches
+  #         - augment.n_bands
+  #         - augment.per_band
+  #         - augment.drop_slots
+  #         - augment.seed
+  #   outs:
+  #     - data/augmentation_90/:
+  #         desc: "Band-aware subcarrier grouping patches, 90 subcarriers (15 per recording)"
+
+  # augment_60:
+  #   cmd: python scripts/08_augmentation.py --config config/augmentation_60.yaml
+  #   deps:
+  #     - scripts/08_augmentation.py
+  #     - src/dwt_coef/inhouse_loader.py
+  #     - src/dwt_coef/augmentation.py
+  #     - config/augmentation_60.yaml
+  #     - data/raw/
+  #   params:
+  #     - config/augmentation_60.yaml:
+  #         - data.persons
+  #         - data.takes
+  #         - data.labeled_only
+  #         - augment.n_patches
+  #         - augment.n_bands
+  #         - augment.per_band
+  #         - augment.drop_slots
+  #         - augment.seed
+  #   outs:
+  #     - data/augmentation_60/:
+  #         desc: "Band-aware subcarrier grouping patches, 60 subcarriers (24 per recording, train-only)"
+
+  # fall_labelling:
+  #   cmd: python scripts/true_fall_labelling.py --config config/fall_labelling.yaml
+  #   deps:
+  #     - scripts/true_fall_labelling.py
+  #     - src/dwt_coef/data_loader.py
+  #     - src/dwt_coef/preprocessing.py
+  #     - config/fall_labelling.yaml
+  #     - Mendeley/
+  #   params:
+  #     - config/fall_labelling.yaml:
+  #         - moving_variance.omega
+  #         - moving_variance.n_streams
+  #         - detection.norm_threshold
+  #         - detection.min_duration
+  #         - detection.merge_threshold
+  #         - detection.max_duration
+  #         - processing.max_files
+  #   outs:
+  #     - results/analysis/03_fall_segments_v2.csv:
+  #         desc: "Fall segment coordinates with metadata"
+  #     - results/analysis/03_fall_labelling_metadata_v2.json:
+  #         desc: "Complete metadata and statistics"
+
+  # verify_raw_csi:
+  #   cmd: python scripts/05_verify_fall_segments.py --max-files 50
+  #   deps:
+  #     - scripts/05_verify_fall_segments.py
+  #     - src/dwt_coef/data_loader.py
+  #     - results/analysis/03_fall_labelling_metadata_v2.json
+  #     - Mendeley/
+  #   outs:
+  #     - results/analysis/fall_segment_verification:
+  #         desc: "Raw CSI with fall segment overlays (50 PNG files)"
+
+  # verify_moving_variance:
+  #   cmd: python scripts/06_moving_variance_verification.py --max-files 50
+  #   deps:
+  #     - scripts/06_moving_variance_verification.py
+  #     - src/dwt_coef/data_loader.py
+  #     - src/dwt_coef/preprocessing.py
+  #     - results/analysis/03_fall_labelling_metadata_v2.json
+  #     - Mendeley/
+  #   outs:
+  #     - results/analysis/fall_moving_variance_verification:
+  #         desc: "Moving variance with fall segment overlays (50 PNG files)"

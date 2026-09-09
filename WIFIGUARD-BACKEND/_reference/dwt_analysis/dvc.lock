@@ -1,0 +1,100 @@
+schema: '2.0'
+stages:
+  preprocess:
+    cmd: python scripts/preprocess.py --config config/preprocess.yaml
+    deps:
+    - path: config/preprocess.yaml
+      hash: md5
+      md5: 8ba4919261d566733dcf8eb024bc3de5
+      size: 1701
+    - path: scripts/preprocess.py
+      hash: md5
+      md5: f368795664ab780b932a5ba4871d5d12
+      size: 10944
+    - path: src/dwt_coef/data_loader.py
+      hash: md5
+      md5: 7aa58ad1e86028d2ac66498049998942
+      size: 5918
+    - path: src/dwt_coef/preprocessing.py
+      hash: md5
+      md5: 20fda58a6e78f130022096966dd4a61c
+      size: 18740
+    params:
+      config/preprocess.yaml:
+        data.activities:
+        data.env:
+        - 1
+        - 2
+        - 3
+        data.fall_only: false
+        data.subjects:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 11
+        - 12
+        - 13
+        - 14
+        - 15
+        - 21
+        - 22
+        - 23
+        - 24
+        - 25
+        filter.high_hz: 80.0
+        filter.low_hz: 0.5
+        filter.order: 4
+        pca.eigenvalue_threshold:
+        pca.max_pcs: 3
+        resample.fs_hz: 320.0
+        resample.tolerance_ms: 2.0
+        stream_selection.n_streams: 30
+        stream_selection.omega: 160
+        stream_selection.use_ant:
+        - 1
+        - 2
+        window.size_sec: 2.5
+        window.stride_sec: 0.25
+    outs:
+    - path: data/preprocessed/
+      hash: md5
+      md5: 41aba62dd6e1852bc62bb92e40563aaa.dir
+      size: 88729130
+      nfiles: 4501
+  featurize:
+    cmd: python scripts/featurization.py --config config/featurization.yaml
+    deps:
+    - path: config/featurization.yaml
+      hash: md5
+      md5: cebfc5e6c56c3422249d78df5287b78d
+      size: 959
+    - path: data/preprocessed/
+      hash: md5
+      md5: 41aba62dd6e1852bc62bb92e40563aaa.dir
+      size: 88729130
+      nfiles: 4501
+    - path: scripts/featurization.py
+      hash: md5
+      md5: 5bfa84eb211e85e466636ff6f86ff4e1
+      size: 10517
+    - path: src/dwt_coef/dwt_features.py
+      hash: md5
+      md5: 4f889daa2b99aa800e7e16bfb8d26185
+      size: 8237
+    params:
+      config/featurization.yaml:
+        dwt.include_entropy: true
+        dwt.level: 3
+        dwt.wavelet: sym4
+        filter.activities:
+        filter.env:
+        filter.fall_only: false
+        filter.subjects:
+    outs:
+    - path: data/features/
+      hash: md5
+      md5: 0e347f7fa3aa2aaef330534fd08d9541.dir
+      size: 9105510
+      nfiles: 4501

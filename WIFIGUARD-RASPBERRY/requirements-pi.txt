@@ -1,0 +1,6 @@
+# 라즈베리파이 실기 전용. 개발 PC에서는 설치되지 않으며,
+# transport/spi_mock.py 가 spidev/RPi.GPIO 없이 같은 코드 경로를 돌린다.
+-r requirements.txt
+
+spidev>=3.6
+RPi.GPIO>=0.7.1

@@ -1,0 +1,51 @@
+# 관측 스택 — 선택 기동 (명세 §3 · F-B18).
+#   docker compose -f compose/docker-compose.dev.yml -f compose/docker-compose.obs.yml up -d
+#
+# 드리프트 알람 체인 (명세 §4 Phase 5-2):
+#   Evidently Drift Score → Prometheus Exporter → scrape
+#     → AlertManager (임계 초과) → Airflow Webhook → model_retrain_dag
+#
+# ⚠ 미검증. 스크랩 대상(Consumer 3 exporter)이 아직 존재하지 않는다.
+
+name: wifiguard-dev
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../infra/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ../infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.5.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:?set in .env}"
+    volumes:
+      - ../infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+  loki:
+    image: grafana/loki:3.3.2
+    ports:
+      - "3100:3100"
+    volumes:
+      - ../infra/loki/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:

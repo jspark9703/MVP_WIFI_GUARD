@@ -1,0 +1,30 @@
+# DWT Feature Extraction Configuration
+# Used by: python scripts/featurization.py --config config/featurization.yaml
+
+# === Input ===
+input:
+  path: "data/preprocessed"
+  # Input files: {path}/E{e}_S{s}_C{c}_A{a}_T{t}.npz
+
+# === Output ===
+output:
+  path: "data/features"
+  # Output files: {path}/E{e}_S{s}_C{c}_A{a}_T{t}.npz
+
+# === DWT Parameters ===
+dwt:
+  wavelet: "sym4"       # Symlet-4 wavelet (symmetric, pywt supported)
+  level: 3             # Decomposition levels
+  include_entropy: true # Include Shannon entropy as feature
+
+# === Filter (optional) ===
+filter:
+  env: null             # null = all; specify: [1] or [1, 2]
+  subjects: null        # null = all; specify: [1, 2, 3]
+  activities: null      # null = all; specify: [2, 5] for falls
+  fall_only: false      # true = process falls only
+
+# === Run Control ===
+run:
+  max_files: null       # null = all; specify: 10 for testing
+  skip_existing: false   # true = skip already processed files

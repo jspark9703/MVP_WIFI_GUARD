@@ -1,0 +1,20 @@
+[Unit]
+Description=WIFI-GUARD service API (uvicorn, /api/v1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/wifiguard-api
+EnvironmentFile=/etc/wifiguard/api.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/wifiguard-api/.venv/bin/uvicorn wifiguard_api.app:app --host 0.0.0.0 --port 8000 --proxy-headers
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

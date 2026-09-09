@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# 시크릿
+compose/.env
+*.pem
+*.key
+
+# 모델 체크포인트 — 89MB. GitHub 100MB 한도에 근접한다.
+# 분리 시 Git LFS 또는 MLflow Registry + S3 로 옮길 것 (PORTING.md §4)
+*.pt
+*.onnx
+
+# 로컬 데이터
+data/
+mlruns/

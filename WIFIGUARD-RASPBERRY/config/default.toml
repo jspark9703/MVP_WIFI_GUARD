@@ -1,0 +1,86 @@
+# WIFI-GUARD 엣지 기본 설정
+#
+# 값의 출처는 이식된 파이썬 dataclass다 — 이 파일은 그 기본값을 재현할 뿐이며,
+# 아직 이 파일을 읽는 코드는 없다(config.py 미구현, PORTING.md 참조).
+# 값을 고칠 때는 반드시 아래 원본 dataclass와 함께 고칠 것.
+#
+#   [presence]  ← src/wifiguard_edge/presence/config.py  PresenceConfig
+#   [features]  ← src/wifiguard_edge/features/realtime.py FeatureConfig  (frozen · 변경 금지)
+
+[presence]
+# --- MV(움직임) 신호체인 ---
+window_sec = 3.0
+stride_sec = 0.25
+fs_hz = 100.0                  # 리샘플 그리드
+mv_window_sec = 0.5            # → omega = round((0.5*100-1)/2) = 24  (banker's rounding: 24.5 → 24)
+n_streams = 10                 # 선택 서브캐리어 수
+bandpass_low = 0.5
+bandpass_high = 50.0
+bandpass_order = 4
+presence_mv_threshold = 2.0    # ★ 캘리브레이션이 런타임에 갱신 (UI 라벨 "움직임 임계값")
+
+# --- Wander(미세움직임) 신호체인 ---
+# 사전필터는 넓게(0.05–5Hz), Welch 측정 대역은 좁게(0.1–0.5Hz) 잡아야 한다.
+# 두 대역을 같게 만들면 사전필터가 이미 전체 에너지를 측정 대역에 가둔 뒤
+# 정규화하므로 측정값의 변별력이 사라진다 (실측 확인 사항).
+wander_window_sec = 10.0
+wander_mv_window_sec = 1.0     # → wander_omega = round((1.0*100-1)/2) = 50  (49.5 → 50)
+wander_prefilter_low = 0.05
+wander_prefilter_high = 5.0
+wander_bandpass_low = 0.1
+wander_bandpass_high = 0.5
+wander_baseline = 0.5          # ★ 캘리브레이션이 런타임에 갱신 (UI 라벨 "재실 baseline")
+wander_ratio_threshold = 1.8   # baseline 대비 배수 (절대값 아님)
+wander_min_duration_s = 2.0    # 디바운스
+
+presence_timeout_s = 10.0
+
+# 주의: PresenceDetector.__init__의 기본값(mv_threshold=2.5, wander_ratio_threshold=2.0,
+# presence_timeout_s=6.0)은 위 값과 다르다. 런타임에는 매 틱 set_thresholds()가
+# 덮어쓰므로 위 PresenceConfig 값이 적용된다. 명세 §4 Phase1은 이관 시 두 기본값을
+# 일치시킬 것을 권고한다 — 아직 반영되지 않았다.
+
+[features]
+# ★ 모델 계약. 체크포인트가 이 형태로 학습되었으므로 변경 금지 (명세 §4 Phase3-4).
+window_seconds = 3.0
+target_subcarriers = 30
+train_raw_pairs = 245
+train_drop_pair_indices = [121, 122]
+omega = 30
+moving_variance_radius_seconds = 0.4
+freq_min_hz = 1.0
+freq_max_hz = 170.0
+image_size = 224               # S3 스칼로그램 (224, 224)
+th_scmax = 1.0
+kappa = 1.0
+carrier_hz = 2.4e9
+acf_lag_seconds = 0.4
+acf_lag_output_bins = 128      # PCA-ACF (1, 128, 64)
+acf_time_bins = 64
+acf_clip_percentile = 99.5
+fs_quantize_hz = 0.25          # ★ freq_to_scale 캐시 적중의 핵심. 빠지면 호출당 0.5초 → 즉시 예산 초과
+
+[calibration]
+# 4단계 총 약 61초 (명세 §4 Phase 2)
+leaving_s = 30.0
+silence_confirm_s = 0.2        # ★ SPI 전환 시 재산정 필요 — UART 921600 baud 드레인(~7ms) 기준값이다.
+                               #   SPI는 50ms 주기 트랜잭션이라 침묵 감지에 2~3 트랜잭션(100~150ms)이 필요할 수 있다 (§9-3)
+agc_settle_s = 1.0
+measuring_s = 30.0
+
+[gating]
+# ★ 미구현 (gating.py 없음). 원칙: 사람이 없는 구간의 원시/피처 데이터는 올리지 않는다.
+# 게이트가 닫혀 있었다는 사실 자체는 telemetry로 항상 보고해야 한다 —
+# 무증상 침묵과 "정상적으로 조용함"을 구별할 수 있어야 하기 때문이다.
+window_publish_hz = 4.0
+telemetry_absent_interval_s = 5.0
+
+[mqtt]
+# ★ 미구현 (mqtt/ 비어 있음). 토픽 계약 SSOT는 docs/WIFI-GUARD_레포명세_backend_v1.0_20260804.md §7.1
+broker_host = "localhost"      # 개발: Mosquitto / 운영: AWS IoT Core
+broker_port = 8883             # 아웃바운드 TLS 전용. 포트포워딩·고정 IP 불필요
+topic_prefix = "wifiguard"     # wifiguard/{facility}/{device}/{presence|telemetry|window|cmd|ack}
+qos_presence = 1
+qos_telemetry = 1
+qos_window = 0                 # 최신성 우선
+qos_cmd_ack = 1

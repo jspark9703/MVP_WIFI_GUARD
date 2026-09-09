@@ -1,0 +1,72 @@
+{
+  "status": "complete_validation_only",
+  "actual_test_dataset": null,
+  "predictions": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/val_predictions.csv",
+  "validation_window_count": 375,
+  "validation_recording_count": 13,
+  "mode_sizes": [
+    3,
+    4,
+    5
+  ],
+  "edge_policy": "keep original prediction when a full neighborhood is unavailable",
+  "even_mode_tie_policy": "keep original center prediction",
+  "best_window_variant": {
+    "variant": "threshold_0p468_mode5",
+    "probability_threshold": 0.468,
+    "n": 375,
+    "nonfall_count": 351,
+    "fall_count": 24,
+    "accuracy": 0.976,
+    "balanced_accuracy": 0.8707264957264957,
+    "macro_f1": 0.8936170212765957,
+    "fall_precision": 0.8571428571428571,
+    "fall_recall": 0.75,
+    "fall_f1": 0.8,
+    "nonfall_precision": 0.9830508474576272,
+    "nonfall_recall": 0.9914529914529915,
+    "nonfall_f1": 0.9872340425531915,
+    "auroc": 0.9446225071225072,
+    "tn_nonfall": 348,
+    "fp_nonfall_as_fall": 3,
+    "fn_fall_as_nonfall": 6,
+    "tp_fall": 18,
+    "changed_count": 13,
+    "fixed_error_count": 12,
+    "new_error_count": 1,
+    "net_correct_delta": 11
+  },
+  "best_recording_rule": {
+    "variant": "threshold_0p5",
+    "min_fall_windows": 1,
+    "n": 13,
+    "fall_trials": 2,
+    "nonfall_trials": 11,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "macro_f1": 1.0,
+    "fall_precision": 1.0,
+    "fall_recall_detection_rate": 1.0,
+    "fall_miss_rate": 0.0,
+    "fall_f1": 1.0,
+    "nonfall_precision": 1.0,
+    "nonfall_specificity": 1.0,
+    "false_alarm_rate": 0.0,
+    "nonfall_f1": 1.0,
+    "tn_nonfall_trial": 11,
+    "fp_nonfall_trial_as_fall": 0,
+    "fn_fall_trial_missed": 0,
+    "tp_fall_trial_detected": 2
+  },
+  "notes": [
+    "All postprocessing choices were evaluated on validation, not test.",
+    "The validation set has only two fall recordings.",
+    "A future independent test set must use a frozen threshold and postprocessing rule."
+  ],
+  "outputs": {
+    "window_predictions": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/postprocess_validation/window_predictions_postprocessed.csv",
+    "window_metrics": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/postprocess_validation/window_metrics.csv",
+    "recording_metrics": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/postprocess_validation/recording_metrics.csv",
+    "recording_cases": "/Volumes/SN850X/projects/FallDetection/artifacts/inhouse/s3_acf_native_hz_midpoint_train_val_finetune/postprocess_validation/recording_cases.csv"
+  }
+}

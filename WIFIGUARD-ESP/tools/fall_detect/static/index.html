@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>실시간 낙상 감지 모니터링</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a33;
+      --panel-soft: #182241;
+      --text: #edf2ff;
+      --muted: #99a7d1;
+      --accent: #53c7ff;
+      --accent-2: #7bffb6;
+      --warn: #ffb454;
+      --danger: #ff6b81;
+      --grid: rgba(255, 255, 255, 0.08);
+      --border: rgba(255, 255, 255, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans KR", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(83, 199, 255, 0.18), transparent 28%),
+        radial-gradient(circle at right top, rgba(123, 255, 182, 0.12), transparent 22%),
+        linear-gradient(180deg, #0a0f1d 0%, #090d18 100%);
+      color: var(--text);
+    }
+
+    .app {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 20px;
+    }
+
+    .panel {
+      background: rgba(18, 26, 51, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(12px);
+    }
+
+    .sidebar,
+    .main {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section {
+      padding: 18px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0 0 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 16px;
+      color: var(--accent);
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--danger);
+      box-shadow: 0 0 10px rgba(255, 107, 129, 0.5);
+    }
+
+    .status-dot.connected {
+      background: var(--accent-2);
+      box-shadow: 0 0 10px rgba(123, 255, 182, 0.6);
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 14px;
+      background: linear-gradient(180deg, #243460, #19274a);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    button.secondary {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .badge {
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .badge.idle {
+      background: rgba(83, 199, 255, 0.18);
+      color: var(--accent);
+    }
+
+    .badge.suspect {
+      background: rgba(255, 180, 84, 0.2);
+      color: var(--warn);
+    }
+
+    .badge.fall {
+      background: rgba(255, 107, 129, 0.25);
+      color: var(--danger);
+    }
+
+    .badge.cooldown {
+      background: rgba(83, 199, 255, 0.12);
+      color: var(--accent);
+    }
+
+    .badge.present {
+      background: rgba(123, 255, 182, 0.18);
+      color: var(--accent-2);
+    }
+
+    .badge.absent {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--panel-soft);
+      border-radius: 14px;
+      padding: 12px;
+      min-height: 92px;
+    }
+
+    .stat-card .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .stat-card .value {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+
+    .chart-card {
+      padding: 16px;
+    }
+
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .chart-head .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+    }
+
+    canvas {
+      width: 100%;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      display: block;
+    }
+
+    .nav-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .nav-btn {
+      background: var(--panel-soft);
+      border: 1px solid transparent;
+      color: var(--text);
+      padding: 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .nav-btn.active {
+      background: rgba(83, 199, 255, 0.15);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    #btn-stop-grid {
+      grid-column: 1 / -1;
+      background: rgba(255, 107, 129, 0.15);
+      color: var(--danger);
+      border: 1px solid transparent;
+      padding: 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    #btn-stop-grid:hover:not(:disabled) {
+      background: rgba(255, 107, 129, 0.25);
+    }
+    #btn-stop-grid:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .config-form {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input,
+    select {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 10px;
+      outline: none;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--accent);
+    }
+
+    pre {
+      margin: 0;
+      max-height: 220px;
+      overflow: auto;
+      padding: 14px;
+      border-radius: 14px;
+      background: #0c1328;
+      color: #dbe7ff;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .alarm-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .alarm-modal.show {
+      display: flex;
+    }
+
+    .alarm-modal-content {
+      background: var(--panel);
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 400px;
+      box-shadow: 0 20px 25px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+
+    .alarm-modal h3 {
+      margin: 0 0 16px;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--danger);
+    }
+
+    .alarm-modal p {
+      margin: 0 0 20px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .alarm-modal button {
+      margin: 0 6px;
+    }
+
+    .onboarding-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .onboarding-modal.show {
+      display: flex;
+    }
+
+    .onboarding-modal-content {
+      background: var(--panel);
+      border-radius: 18px;
+      padding: 32px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border);
+    }
+
+    .onboarding-steps {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .onboarding-step-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .onboarding-step-dot.active {
+      background: var(--accent);
+    }
+
+    .onboarding-step-dot.done {
+      background: var(--accent-2);
+    }
+
+    .onboarding-step {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .onboarding-step[hidden] {
+      display: none;
+    }
+
+    .onboarding-step h3 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .onboarding-error {
+      color: var(--danger);
+      font-size: 13px;
+      min-height: 1em;
+    }
+
+    .onboarding-progress-line {
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 1em;
+    }
+
+    @media (max-width: 1200px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .stat-grid,
+      .config-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .stat-grid,
+      .config-form {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <section class="panel section">
+        <div class="button-row">
+          <div class="status-pill">
+            <span id="statusDot" class="status-dot"></span>
+            <span id="statusText">중지됨</span>
+          </div>
+        </div>
+        <div style="height: 12px;"></div>
+        <label>
+          <span>ESP 포트</span>
+          <input id="portInput" type="text" placeholder="COM3" autocomplete="off" />
+        </label>
+        <div class="button-row">
+          <button id="btn-toggle">시작</button>
+        </div>
+      </section>
+
+      <section class="panel section" id="fallStatusPanel">
+        <h2>낙상 상태</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span id="fallStateBadge" class="badge idle">대기</span>
+          <span class="muted">마지막 낙상: <span id="fallLastAt">-</span></span>
+        </div>
+        <div style="height: 8px;"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span class="muted">재실 상태</span>
+          <span id="presenceBadge" class="badge absent">퇴실</span>
+        </div>
+      </section>
+
+      <section class="panel section">
+        <div id="navGrid" class="nav-grid">
+          <button class="nav-btn" data-page="monitor">모니터링</button>
+          <button class="nav-btn" data-page="config">탐지설정</button>
+          <button class="nav-btn" data-page="history">낙상기록</button>
+          <button class="nav-btn" data-page="train">Train</button>
+          <button id="btn-stop-grid" disabled>정지</button>
+        </div>
+      </section>
+
+      <section class="panel section">
+        <h2>이벤트 로그</h2>
+        <pre id="eventLog"></pre>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div id="page-monitor" class="page">
+        <section class="panel section">
+          <h2>감지 상태</h2>
+          <div id="statGrid" class="stat-grid"></div>
+        </section>
+
+        <section class="panel chart-card">
+          <div class="chart-head">
+            <div>
+              <h2>이동분산 (Moving Variance)</h2>
+              <div class="muted">mv_current vs mv_threshold</div>
+            </div>
+            <div class="legend" id="mvLegend"></div>
+          </div>
+          <canvas id="mvChart" width="1200" height="280"></canvas>
+        </section>
+      </div>
+
+      <div id="page-config" class="page" hidden>
+        <section class="panel section">
+          <h2>탐지 설정</h2>
+        <div style="height: 12px;"></div>
+        <form id="configForm" class="config-form" autocomplete="off">
+          <label>
+            <span>window_sec</span>
+            <input id="cfgWindowSec" type="number" step="0.1" min="0.1" autocomplete="off" />
+          </label>
+          <label>
+            <span>stride_sec</span>
+            <input id="cfgStrideSec" type="number" step="0.1" min="0.1" autocomplete="off" />
+          </label>
+          <label>
+            <span>fs_hz</span>
+            <input id="cfgFsHz" type="number" step="1" min="1" autocomplete="off" />
+          </label>
+          <label>
+            <span>mv_window_sec</span>
+            <input id="cfgMvWindowSec" type="number" step="0.01" min="0.01" autocomplete="off" />
+          </label>
+          <label>
+            <span>n_streams</span>
+            <input id="cfgNStreams" type="number" step="1" min="1" autocomplete="off" />
+          </label>
+          <label>
+            <span>bandpass_low</span>
+            <input id="cfgBandpassLow" type="number" step="0.1" min="0" autocomplete="off" />
+          </label>
+          <label>
+            <span>bandpass_high</span>
+            <input id="cfgBandpassHigh" type="number" step="0.1" min="0" autocomplete="off" />
+          </label>
+          <label>
+            <span>bandpass_order</span>
+            <input id="cfgBandpassOrder" type="number" step="1" min="1" autocomplete="off" />
+          </label>
+          <label>
+            <span>mv_threshold</span>
+            <input id="cfgMvThreshold" type="number" step="0.01" min="0" autocomplete="off" />
+          </label>
+          <label>
+            <span>min_duration_s</span>
+            <input id="cfgMinDurationS" type="number" step="0.01" min="0" autocomplete="off" />
+          </label>
+          <label>
+            <span>merge_gap_s</span>
+            <input id="cfgMergeGapS" type="number" step="0.01" min="0" autocomplete="off" />
+          </label>
+          <label>
+            <span>max_duration_s</span>
+            <input id="cfgMaxDurationS" type="number" step="0.1" min="0" autocomplete="off" />
+          </label>
+          <label>
+            <span>cooldown_s</span>
+            <input id="cfgCooldownS" type="number" step="0.1" min="0" autocomplete="off" />
+          </label>
+        </form>
+        <div style="height: 12px;"></div>
+        <div class="button-row">
+          <button id="applyConfigBtn">적용</button>
+        </div>
+        </section>
+      </div>
+
+      <div id="page-history" class="page" hidden>
+        <section class="panel section">
+          <h2>낙상 기록</h2>
+          <table id="fallHistoryTable">
+            <thead>
+              <tr>
+                <th>시각</th>
+                <th>신뢰도</th>
+              </tr>
+            </thead>
+            <tbody id="fallHistoryList">
+              <tr><td colspan="2" class="muted">기록 없음</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <div id="page-train" class="page" hidden>
+        <section class="panel section" style="text-align: center; padding: 60px 20px;">
+          <h2 style="margin-bottom: 16px;">DNN 모델 학습</h2>
+          <p class="muted">DNN 모델 학습 기능은 추후 제공될 예정입니다.</p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="alarmModal" class="alarm-modal">
+    <div class="alarm-modal-content">
+      <h3>⚠️ 낙상 감지됨</h3>
+      <p id="alarmMsg">센서에서 낙상이 감지되었습니다!</p>
+      <button onclick="dismissAlarm()">확인</button>
+    </div>
+  </div>
+
+  <div id="onboardingModal" class="onboarding-modal">
+    <div class="onboarding-modal-content">
+      <div class="onboarding-steps">
+        <span class="onboarding-step-dot" data-step-dot="1"></span>
+        <span class="onboarding-step-dot" data-step-dot="2"></span>
+        <span class="onboarding-step-dot" data-step-dot="3"></span>
+        <span class="onboarding-step-dot" data-step-dot="4"></span>
+      </div>
+
+      <div id="onbStep1" class="onboarding-step">
+        <h3>서비스 안내</h3>
+        <p class="muted">사용 환경을 선택하면 그에 맞는 안내를 보여드립니다.</p>
+        <label>
+          <span>서비스 유형</span>
+          <select id="onbServiceType">
+            <option value="home">가정 (독거노인 1인 가구)</option>
+            <option value="facility">요양원 (다수 입소자)</option>
+          </select>
+        </label>
+        <p id="onbServiceGuide" class="muted"></p>
+        <div class="button-row">
+          <button id="onbStep1Next">다음</button>
+        </div>
+      </div>
+
+      <div id="onbStep2" class="onboarding-step" hidden>
+        <h3>장치 등록</h3>
+        <p class="muted">수신용 ESP32 보드를 USB로 연결하고 포트를 입력하세요.</p>
+        <label>
+          <span>ESP 포트</span>
+          <input id="onbPortInput" type="text" placeholder="COM3" autocomplete="off" />
+        </label>
+        <div class="button-row">
+          <button id="onbConnectBtn" class="secondary">연결</button>
+        </div>
+        <label>
+          <span>장치명</span>
+          <input id="onbDeviceName" type="text" placeholder="예: 거실 센서" autocomplete="off" />
+        </label>
+        <label>
+          <span>공간/호실</span>
+          <input id="onbRoomName" type="text" placeholder="예: 거실" autocomplete="off" />
+        </label>
+        <p id="onbStep2Error" class="onboarding-error"></p>
+        <div class="button-row">
+          <button id="onbStep2Next" disabled>다음</button>
+        </div>
+      </div>
+
+      <div id="onbStep3" class="onboarding-step" hidden>
+        <h3>초기 캘리브레이션</h3>
+        <p class="muted">버튼을 누르면 10초간 <strong>이 공간을 나갈 시간</strong>을 드립니다. 이후 AGC 보정과 기준값 측정이 진행되며, 총 약 31초가 소요됩니다. 측정이 끝날 때까지 공간이 비어있어야 합니다.</p>
+        <div class="button-row">
+          <button id="onbCalibrateBtn">캘리브레이션 시작</button>
+        </div>
+        <p id="onbCalibrateStatus" class="onboarding-progress-line"></p>
+        <p id="onbCalibrateError" class="onboarding-error"></p>
+        <div class="button-row">
+          <button id="onbStep3Next" disabled>다음</button>
+        </div>
+      </div>
+
+      <div id="onbStep4" class="onboarding-step" hidden>
+        <h3>완료</h3>
+        <p class="muted">설정이 완료되었습니다. 실시간 관제 화면으로 이동합니다.</p>
+        <p id="onbSummary" class="muted"></p>
+        <div class="button-row">
+          <button id="onbCompleteBtn">시작하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global state (single monitor, no multi-ESP)
+    const monitor = {
+      packetCount: 0,
+      detection: null,
+      samples: [],
+    };
+    let running = false;
+    let ws = null;
+    let reconnTimer = null;
+    let detectionConfig = {};
+    const eventLog = [];
+    const MAX_SAMPLES = 240;
+    
+    // Page state
+    let currentPage = "monitor";
+    const fallHistory = [];
+    const MV_SMOOTH_WINDOW = 5;
+
+    // Config inputs map
+    const configInputs = {
+      window_sec: document.getElementById("cfgWindowSec"),
+      stride_sec: document.getElementById("cfgStrideSec"),
+      fs_hz: document.getElementById("cfgFsHz"),
+      mv_window_sec: document.getElementById("cfgMvWindowSec"),
+      n_streams: document.getElementById("cfgNStreams"),
+      bandpass_low: document.getElementById("cfgBandpassLow"),
+      bandpass_high: document.getElementById("cfgBandpassHigh"),
+      bandpass_order: document.getElementById("cfgBandpassOrder"),
+      mv_threshold: document.getElementById("cfgMvThreshold"),
+      min_duration_s: document.getElementById("cfgMinDurationS"),
+      merge_gap_s: document.getElementById("cfgMergeGapS"),
+      max_duration_s: document.getElementById("cfgMaxDurationS"),
+      cooldown_s: document.getElementById("cfgCooldownS"),
+    };
+
+    // Generic utility functions (ported verbatim from web_serial_monitor.html)
+    function logEvent(text) {
+      const now = new Date().toLocaleTimeString();
+      eventLog.unshift(`[${now}] ${text}`);
+      while (eventLog.length > 80) {
+        eventLog.pop();
+      }
+      document.getElementById("eventLog").textContent = eventLog.join("\n");
+    }
+
+    function switchPage(key) {
+      currentPage = key;
+      document.querySelectorAll(".page").forEach(el => el.hidden = (el.id !== `page-${key}`));
+      document.querySelectorAll(".nav-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.page === key);
+      });
+      if (key === "history") renderFallHistory();
+    }
+
+    function recordFallEvent(det) {
+      fallHistory.unshift({ time: det.last_fall_at, confidence: det.confidence });
+      if (fallHistory.length > 100) fallHistory.pop();
+    }
+
+    function renderFallHistory() {
+      const tbody = document.getElementById("fallHistoryList");
+      if (fallHistory.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" class="muted">기록 없음</td></tr>';
+        return;
+      }
+      tbody.innerHTML = fallHistory.map(ev => `
+        <tr>
+          <td>${new Date(ev.time).toLocaleString()}</td>
+          <td>${ev.confidence ? (ev.confidence * 100).toFixed(1) + '%' : "-"}</td>
+        </tr>
+      `).join("");
+    }
+
+    function smooth(values, windowSize) {
+      const out = [];
+      for (let i = 0; i < values.length; i++) {
+        const start = Math.max(0, i - windowSize + 1);
+        const slice = values.slice(start, i + 1).filter(Number.isFinite);
+        out.push(slice.length ? slice.reduce((a, b) => a + b, 0) / slice.length : NaN);
+      }
+      return out;
+    }
+
+    function buildLegend(container, items) {
+      container.innerHTML = "";
+      for (const item of items) {
+        const el = document.createElement("div");
+        el.className = "legend-item";
+        el.innerHTML = `<span class="legend-color" style="background:${item.color}"></span><span>${item.label}</span>`;
+        container.appendChild(el);
+      }
+    }
+
+    function statItem(label, value, extraClass = "") {
+      return `<div class="stat-card ${extraClass}"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    }
+
+    function drawLineChart(canvas, seriesList, formatter) {
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      
+      // Do not resize or draw if hidden (width/height is 0) to avoid collapsing the canvas
+      if (width === 0 || height === 0) return;
+
+      if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const padding = { top: 18, right: 20, bottom: 28, left: 52 };
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      if (plotWidth <= 0 || plotHeight <= 0) {
+        return;
+      }
+
+      const values = [];
+      for (const series of seriesList) {
+        values.push(...series.values.filter((v) => Number.isFinite(v)));
+      }
+      if (values.length === 0) {
+        ctx.fillStyle = "rgba(255,255,255,0.6)";
+        ctx.fillText("데이터 없음", padding.left + 4, padding.top + 20);
+        return;
+      }
+
+      const min = 0;
+      let max = Math.max(...values);
+      if (max <= min) {
+        max = 1;
+      } else {
+        max += max * 0.08;
+      }
+
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i <= 4; i++) {
+        const y = padding.top + (plotHeight * i) / 4;
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(padding.left + plotWidth, y);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.font = "12px sans-serif";
+      for (let i = 0; i <= 4; i++) {
+        const ratio = 1 - i / 4;
+        const value = min + (max - min) * ratio;
+        const y = padding.top + plotHeight * i / 4 + 4;
+        ctx.fillText(formatter(value), 8, y);
+      }
+
+      for (const series of seriesList) {
+        ctx.beginPath();
+        ctx.lineWidth = series.width || 2;
+        ctx.strokeStyle = series.color;
+        series.values.forEach((value, index) => {
+          if (!Number.isFinite(value)) {
+            return;
+          }
+          const x = padding.left + (plotWidth * index) / Math.max(series.values.length - 1, 1);
+          const y = padding.top + ((max - value) / (max - min)) * plotHeight;
+          if (index === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        });
+        ctx.stroke();
+      }
+    }
+
+    // UI rendering functions
+    function renderStatGrid() {
+      const det = monitor.detection;
+      if (!det) {
+        const statGridEl = document.getElementById("statGrid");
+        statGridEl.innerHTML = [
+          statItem("상태", "-"),
+          statItem("MV값", "-"),
+          statItem("신뢰도", "-"),
+          statItem("임계값", "-"),
+        ].join("");
+        return;
+      }
+
+      const stateMap = { idle: "대기", suspect: "의심", fall: "낙상", cooldown: "냉각중" };
+      document.getElementById("statGrid").innerHTML = [
+        statItem("상태", stateMap[det.state] || det.state, `state-${det.state}`),
+        statItem("MV값", det.mv_current ? det.mv_current.toFixed(3) : "-"),
+        statItem("신뢰도", det.confidence ? (det.confidence * 100).toFixed(1) + '%' : "-"),
+        statItem("임계값", det.mv_threshold ? det.mv_threshold.toFixed(3) : "-"),
+      ].join("");
+    }
+
+    function pushMvSample(det) {
+      monitor.samples.push({ mv_current: det.mv_current, mv_threshold: det.mv_threshold });
+      if (monitor.samples.length > MAX_SAMPLES) monitor.samples.shift();
+    }
+
+    function renderMvChart() {
+      const samples = monitor.samples || [];
+      const rawCurrent = samples.map((s) => s.mv_current);
+      const smoothedCurrent = smooth(rawCurrent, MV_SMOOTH_WINDOW);
+      
+      const series = [
+        { label: "mv_current (smoothed)", color: "#53c7ff", values: smoothedCurrent },
+        { label: "mv_threshold", color: "#ffb454", width: 1.5, values: samples.map((s) => s.mv_threshold) },
+      ];
+      buildLegend(document.getElementById("mvLegend"), series);
+      drawLineChart(document.getElementById("mvChart"), series, (v) => v.toFixed(3));
+    }
+
+    function renderFallStatusPanel() {
+      const det = monitor.detection;
+      const stateMap = { idle: "대기", suspect: "의심", fall: "낙상", cooldown: "냉각중" };
+      const state = det?.state || "idle";
+      const badge = document.getElementById("fallStateBadge");
+      badge.className = `badge ${state}`;
+      badge.textContent = stateMap[state] || state;
+      document.getElementById("fallLastAt").textContent =
+        det?.last_fall_at ? new Date(det.last_fall_at).toLocaleString() : "-";
+
+      const presenceMap = { present: "재실", absent: "퇴실" };
+      const presenceState = det?.presence_state || "absent";
+      const presenceBadge = document.getElementById("presenceBadge");
+      presenceBadge.className = `badge ${presenceState}`;
+      presenceBadge.textContent = presenceMap[presenceState] || presenceState;
+    }
+
+    function renderAll() {
+      renderStatGrid();
+      renderMvChart();
+      renderFallStatusPanel();
+    }
+
+    // Config management
+    async function loadDetectionConfig() {
+      try {
+        const res = await fetch("/detection/config");
+        const data = await res.json();
+        detectionConfig = data;
+        hydrateConfigForm();
+      } catch (e) {
+        console.error("Failed to load config:", e);
+      }
+    }
+
+    function hydrateConfigForm() {
+      for (const [key, input] of Object.entries(configInputs)) {
+        const v = detectionConfig[key];
+        if (v !== undefined && v !== null) {
+          input.value = String(v);
+        } else {
+          input.value = "";
+        }
+      }
+    }
+
+    async function applyConfig() {
+      try {
+        const body = {};
+        for (const [key, input] of Object.entries(configInputs)) {
+          if (input.value) {
+            body[key] = Number(input.value);
+          }
+        }
+        const res = await fetch("/detection/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        const result = await res.json();
+        detectionConfig = result.config || {};
+        hydrateConfigForm();
+        logEvent("설정 적용됨");
+      } catch (e) {
+        alert("설정 적용 실패: " + e.message);
+        logEvent("설정 적용 실패: " + e.message);
+      }
+    }
+
+    function setRunning(r) {
+      running = r;
+      document.getElementById("statusDot").classList.toggle("connected", r);
+      document.getElementById("statusText").textContent = r ? "실행중" : "중지됨";
+      document.getElementById("btn-toggle").textContent = r ? "중지" : "시작";
+      document.getElementById("portInput").disabled = r;
+      document.getElementById("btn-stop-grid").disabled = !r;
+    }
+
+    async function stopMonitoring() {
+      await json_("/monitor/stop", { method: "POST" });
+      logEvent("모니터링 중지");
+      await refreshStatus();
+    }
+
+    async function json_(url, opts = {}) {
+      const r = await fetch(url, opts);
+      let d = null;
+      try {
+        d = await r.json();
+      } catch (_) {}
+      if (!r.ok) throw new Error(d?.detail || r.statusText);
+      return d;
+    }
+
+    async function refreshStatus() {
+      try {
+        const s = await json_("/monitor/status");
+        setRunning(s.running);
+        monitor.packetCount = s.packet_count;
+        if (s.error) {
+          logEvent("오류: " + s.error);
+        }
+        renderAll();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function toggle() {
+      document.getElementById("btn-toggle").disabled = true;
+      try {
+        if (running) {
+          await stopMonitoring();
+        } else {
+          const port = document.getElementById("portInput").value.trim();
+          if (!port) {
+            alert("ESP 포트를 입력하세요");
+            return;
+          }
+          await json_("/monitor/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ port }),
+          });
+          logEvent("모니터링 시작");
+          await refreshStatus();
+        }
+      } catch (e) {
+        alert("오류: " + e.message);
+        logEvent("오류: " + e.message);
+      } finally {
+        document.getElementById("btn-toggle").disabled = false;
+      }
+    }
+
+    let lastPresenceState = null;
+
+    function connectWs() {
+      if (ws) return;
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws/live`);
+      ws.onmessage = (ev) => {
+        const d = JSON.parse(ev.data);
+        setRunning(d.running);
+        monitor.packetCount = d.packet_count;
+        if (d.detection) {
+          monitor.detection = d.detection;
+          pushMvSample(d.detection);
+          if (d.detection.just_triggered) {
+            recordFallEvent(d.detection);
+            showAlarm();
+            logEvent("⚠ 낙상 감지");
+            if (currentPage === "history") renderFallHistory();
+          }
+          if (lastPresenceState !== null && d.detection.presence_state !== lastPresenceState) {
+            logEvent(d.detection.presence_state === "present" ? "재실 감지" : "퇴실 감지");
+          }
+          lastPresenceState = d.detection.presence_state;
+        }
+        renderAll();
+      };
+      ws.onclose = () => {
+        ws = null;
+        reconnTimer = setTimeout(connectWs, 1500);
+      };
+      ws.onerror = () => {
+        ws?.close();
+      };
+    }
+
+    function showAlarm() {
+      const modal = document.getElementById("alarmModal");
+      const msg = document.getElementById("alarmMsg");
+      msg.textContent = "센서에서 낙상이 감지되었습니다!";
+      modal.classList.add("show");
+      setTimeout(() => {
+        modal.classList.remove("show");
+      }, 5000);
+    }
+
+    function dismissAlarm() {
+      const modal = document.getElementById("alarmModal");
+      modal.classList.remove("show");
+    }
+
+    // Onboarding wizard (first-login setup: service intro -> device registration ->
+    // calibration -> complete). Gates the dashboard behind #onboardingModal until
+    // the backend reports onboarded=true.
+    const ONB_SERVICE_GUIDE = {
+      home: "독거노인 등 1인 가구를 위한 낙상 감지 서비스입니다. 낙상이 감지되면 즉시 알람이 표시됩니다.",
+      facility: "요양원 등 다수의 입소자를 관리하는 시설을 위한 서비스입니다. 담당 요양사가 감지 화면을 상시 확인해주세요.",
+    };
+    const ONB_CALIB_PHASE_LABEL = {
+      idle: "대기 중",
+      leaving: "이 공간에서 나가주세요",
+      waiting_ack: "명령 전송 중",
+      waiting_agc: "AGC 보정 중",
+      measuring: "베이스라인 측정 중",
+      done: "완료",
+      error: "오류",
+    };
+    const ONB_LEAVE_WAIT_S = 10; // must match src/onboarding.py's run_calibration() leave_wait_s default
+    let onbCalibratePollTimer = null;
+
+    async function initOnboarding() {
+      try {
+        const status = await json_("/onboarding/status");
+        if (status.onboarded) {
+          document.getElementById("onboardingModal").classList.remove("show");
+          return;
+        }
+        document.getElementById("onboardingModal").classList.add("show");
+        showOnboardingStep(status.step || 1);
+      } catch (e) {
+        console.error("Failed to load onboarding status:", e);
+        document.getElementById("onboardingModal").classList.add("show");
+        showOnboardingStep(1);
+      }
+    }
+
+    function showOnboardingStep(step) {
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById(`onbStep${i}`).hidden = (i !== step);
+      }
+      document.querySelectorAll(".onboarding-step-dot").forEach((dot) => {
+        const n = Number(dot.dataset.stepDot);
+        dot.classList.toggle("active", n === step);
+        dot.classList.toggle("done", n < step);
+      });
+    }
+
+    function updateOnbServiceGuide() {
+      const type = document.getElementById("onbServiceType").value;
+      document.getElementById("onbServiceGuide").textContent = ONB_SERVICE_GUIDE[type] || "";
+    }
+
+    document.getElementById("onbServiceType").addEventListener("change", updateOnbServiceGuide);
+    updateOnbServiceGuide();
+
+    document.getElementById("onbStep1Next").addEventListener("click", async () => {
+      try {
+        const service_type = document.getElementById("onbServiceType").value;
+        await json_("/onboarding/service", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ service_type }),
+        });
+        showOnboardingStep(2);
+      } catch (e) {
+        alert("오류: " + e.message);
+      }
+    });
+
+    document.getElementById("onbConnectBtn").addEventListener("click", async () => {
+      const btn = document.getElementById("onbConnectBtn");
+      const errEl = document.getElementById("onbStep2Error");
+      errEl.textContent = "";
+      btn.disabled = true;
+      try {
+        const port = document.getElementById("onbPortInput").value.trim();
+        if (!port) throw new Error("ESP 포트를 입력하세요");
+        await json_("/monitor/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port }),
+        });
+        await refreshStatus();
+        document.getElementById("onbStep2Next").disabled = false;
+        logEvent("장치 연결됨 (온보딩)");
+      } catch (e) {
+        errEl.textContent = "연결 실패: " + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("onbStep2Next").addEventListener("click", async () => {
+      try {
+        const device_name = document.getElementById("onbDeviceName").value.trim() || "센서";
+        const room_name = document.getElementById("onbRoomName").value.trim() || "-";
+        await json_("/onboarding/device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ device_name, room_name }),
+        });
+        showOnboardingStep(3);
+      } catch (e) {
+        document.getElementById("onbStep2Error").textContent = "오류: " + e.message;
+      }
+    });
+
+    document.getElementById("onbCalibrateBtn").addEventListener("click", async () => {
+      const btn = document.getElementById("onbCalibrateBtn");
+      const errEl = document.getElementById("onbCalibrateError");
+      errEl.textContent = "";
+      btn.disabled = true;
+      document.getElementById("onbStep3Next").disabled = true;
+      try {
+        await json_("/onboarding/calibrate/start", { method: "POST" });
+        pollCalibrationStatus();
+      } catch (e) {
+        errEl.textContent = "오류: " + e.message;
+        btn.disabled = false;
+      }
+    });
+
+    function pollCalibrationStatus() {
+      if (onbCalibratePollTimer) return;
+      onbCalibratePollTimer = setInterval(async () => {
+        try {
+          const status = await json_("/onboarding/calibrate/status");
+          const label = ONB_CALIB_PHASE_LABEL[status.phase] || status.phase;
+          const timeText = status.phase === "leaving"
+            ? `${Math.max(0, ONB_LEAVE_WAIT_S - status.phase_elapsed_s).toFixed(0)}초 남음`
+            : `${status.phase_elapsed_s.toFixed(0)}초 경과`;
+          let statusText = `${label} (${timeText})`;
+          if (status.agc_duration_s !== null && status.agc_duration_s !== undefined) {
+            statusText += ` · AGC 실측: ${status.agc_duration_s.toFixed(2)}초`;
+          }
+          document.getElementById("onbCalibrateStatus").textContent = statusText;
+          if (status.phase === "done") {
+            clearInterval(onbCalibratePollTimer);
+            onbCalibratePollTimer = null;
+            document.getElementById("onbCalibrateStatus").textContent =
+              `완료 (mv_threshold=${status.mv_threshold.toFixed(3)}, wander_baseline=${status.wander_baseline.toFixed(3)})`;
+            document.getElementById("onbStep3Next").disabled = false;
+            document.getElementById("onbCalibrateBtn").disabled = false;
+            logEvent("캘리브레이션 완료");
+          } else if (status.phase === "error") {
+            clearInterval(onbCalibratePollTimer);
+            onbCalibratePollTimer = null;
+            document.getElementById("onbCalibrateError").textContent = "오류: " + status.error;
+            document.getElementById("onbCalibrateBtn").disabled = false;
+          }
+        } catch (e) {
+          clearInterval(onbCalibratePollTimer);
+          onbCalibratePollTimer = null;
+          document.getElementById("onbCalibrateError").textContent = "오류: " + e.message;
+          document.getElementById("onbCalibrateBtn").disabled = false;
+        }
+      }, 1000);
+    }
+
+    document.getElementById("onbStep3Next").addEventListener("click", async () => {
+      try {
+        const status = await json_("/onboarding/calibrate/status");
+        document.getElementById("onbSummary").textContent =
+          `mv_threshold=${status.mv_threshold.toFixed(3)}, wander_baseline=${status.wander_baseline.toFixed(3)}`;
+        showOnboardingStep(4);
+      } catch (e) {
+        alert("오류: " + e.message);
+      }
+    });
+
+    document.getElementById("onbCompleteBtn").addEventListener("click", async () => {
+      try {
+        await json_("/onboarding/complete", { method: "POST" });
+        document.getElementById("onboardingModal").classList.remove("show");
+        logEvent("온보딩 완료");
+      } catch (e) {
+        alert("오류: " + e.message);
+      }
+    });
+
+    // Event listeners
+    document.getElementById("btn-toggle").addEventListener("click", toggle);
+    document.getElementById("applyConfigBtn").addEventListener("click", applyConfig);
+    document.getElementById("btn-stop-grid").addEventListener("click", stopMonitoring);
+    document.querySelectorAll(".nav-btn").forEach(btn => {
+      btn.addEventListener("click", () => switchPage(btn.dataset.page));
+    });
+
+    // Page init
+    switchPage("monitor");
+    refreshStatus();
+    loadDetectionConfig();
+    connectWs();
+    initOnboarding();
+    logEvent("페이지 로드됨");
+  </script>
+</body>
+</html>

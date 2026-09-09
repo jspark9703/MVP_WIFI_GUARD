@@ -1,0 +1,11 @@
+node_modules
+dist
+.output
+.vinxi
+pnpm-lock.yaml
+package-lock.json
+bun.lock
+routeTree.gen.ts
+
+# OpenAPI 코드젠 산출물 (bun run api:types)
+src/api/generated/

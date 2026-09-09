@@ -1,0 +1,29 @@
+# CSI Augmentation Configuration (Band-aware Subcarrier Grouping, 90 subcarriers)
+# Used by: python scripts/08_augmentation.py --config config/augmentation_90.yaml
+
+# === Data Source ===
+data:
+  raw_root: "data/raw"      # 자체 수집 CSV 디렉토리
+  persons: null             # null = all; specify: [1, 2]
+  takes: null               # null = all Q1~Q12; specify: [1, 2, 3] for fall takes only
+  labeled_only: false       # true = label 컬럼이 있는 _labeled 파일만 처리 (Q1~Q6)
+
+# === Output ===
+output:
+  path: "data/augmentation_90"
+  # Files saved as: {path}/P{p}S{s}C{c}[F{a}-{b}]Q{q}_aug{kk}.npz
+
+# === Band-aware Subcarrier Grouping ===
+# 대역당 81개 중 30개 -> 패치당 90개, 패치쌍 평균 중복 37%.
+# 15 패치에서 커버리지 99.9%, 서브캐리어당 평균 5.6회 사용 (중복도 5.6배).
+augment:
+  n_patches: 15             # 원본 레코딩 1개당 생성할 패치 수
+  n_bands: 3                # 주파수 대역 분할 수 (low / mid / high)
+  per_band: 30              # 대역당 무작위 추출 서브캐리어 수 (총 n_bands * per_band = 90)
+  drop_slots: [121, 122]    # 채널 정보 없는 슬롯 (121 = 파일별 상수, 122 = DC 널) -> 245 - 2 = 243
+  seed: 42                  # 전역 시드 (파일별 rng = default_rng([seed, file_ordinal]))
+
+# === Run Control ===
+run:
+  max_files: null           # null = process all; specify: 2 for testing
+  skip_existing: false      # true = 이미 생성된 패치가 있는 파일은 건너뜀
