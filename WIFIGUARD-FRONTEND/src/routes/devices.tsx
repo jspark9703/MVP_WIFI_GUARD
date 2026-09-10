@@ -6,7 +6,7 @@ import { useAuth } from "@/api/auth";
 import { ApiError } from "@/api/client";
 import { useCreateDevice, useDeleteDevice, useUpdateDevice } from "@/api/mutations";
 import { useDevices } from "@/api/queries";
-import { LegacyConnectionPanel, LegacyDiagnosticsPanel } from "@/components/LegacyLivePanels";
+import { LinkStatusPanel } from "@/components/LinkStatusPanel";
 import { isCalibrationDemoRunning, runCalibrationDemo, secondsLeft } from "@/lib/calibration-sim";
 import {
   CALIBRATION_STAGE_LABEL,
@@ -137,27 +137,7 @@ function DevicesPage() {
           </button>
         </div>
 
-        {import.meta.env.VITE_ENABLE_LIVE === "1" && !isFacility ? (
-          <>
-            <LegacyConnectionPanel />
-            <LegacyDiagnosticsPanel />
-          </>
-        ) : (
-          <div className="bg-surface border border-border rounded-lg p-4 flex items-start gap-3">
-            <div className="text-muted text-lg leading-none">📡</div>
-            <div>
-              <div className="text-sm font-semibold">실시간 경로는 다음 단계</div>
-              <p className="text-xs text-muted leading-relaxed">
-                기기 텔레메트리(RSSI·온라인 여부)와 엣지 캘리브레이션 연동은 MQTT 업링크가 붙은 뒤
-                표시됩니다. 지금은 장치 등록·매핑·설정값 보관만 동작하며, MQTT 토픽은 서버가{" "}
-                <span className="font-mono">
-                  wifiguard/{"{"}시설{"}"}/{"{"}장치{"}"}
-                </span>{" "}
-                형식으로 발급합니다.
-              </p>
-            </div>
-          </div>
-        )}
+        <LinkStatusPanel />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 bg-surface border border-border rounded-lg overflow-hidden">

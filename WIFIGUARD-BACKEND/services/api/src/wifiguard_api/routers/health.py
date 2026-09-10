@@ -65,6 +65,21 @@ def root() -> dict[str, Any]:
     return {"service": "wifiguard-api", "stage": "service-crud", "server_time": time.time()}
 
 
+def _ingest_status() -> dict[str, Any] | None:
+    """인제스트 실측 상태. 없으면 None (실시간 경로 미기동).
+
+    `checks` 와 분리한 이유: 인제스트가 꺼져 있어도 **degraded 가 아니다**. CRUD 는
+    실시간 경로와 무관하게 정상이고, AWS 에는 아직 브로커·Kafka 가 없다(M4). 여기서
+    503 을 내면 헬스체크에 걸려 배포가 막힌다.
+    """
+    try:
+        from wifiguard_ingest.service import get_service
+    except ImportError:
+        return None
+    service = get_service()
+    return service.status() if service else None
+
+
 @router.get("/health")
 def health(response: Response) -> dict[str, Any]:
     checks: dict[str, dict[str, Any]] = {"database": _safe(_db_check)}
@@ -75,7 +90,11 @@ def health(response: Response) -> dict[str, Any]:
     all_ok = all(c.get("ok") for c in checks.values())
     if not all_ok:
         response.status_code = 503
-    return {"status": "ok" if all_ok else "degraded", "checks": checks}
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "checks": checks,
+        "ingest": _ingest_status(),
+    }
 
 
 @router.get("/ports")

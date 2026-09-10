@@ -21,9 +21,9 @@ import {
   useMvHistory,
   useResidents,
 } from "@/api/queries";
+import { useLiveDevice } from "@/api/realtime/useLiveStream";
 import { EventLogPanel } from "@/components/EventLogPanel";
 import { alarmStore, useAlarm } from "@/lib/alarm-store";
-import { useLiveStream } from "@/lib/backend";
 import { FALL_RESPONSE_LABEL, type FallResponse, type StateMachine } from "@/lib/domain";
 import {
   DETECTION_INACTIVE_LABEL,
@@ -54,9 +54,9 @@ const CHART_STYLE = {
 };
 
 /**
- * 실시간 관제. 이번 단계는 실시간 경로(/ws/live)가 없으므로 실모드에서는 재실/낙상 카드가
- * "감지 미동작"으로 표시된다 — 낙상 없음이 아니라 감지가 동작하지 않는 상태다 (F-W11).
- * VITE_USE_MOCK=1 이면 시뮬레이션이, VITE_ENABLE_LIVE=1 이면 레거시 로컬 백엔드 WS 가 값을 채운다.
+ * 실시간 관제. 값은 `/ws/live`(`useLiveDevice`)에서 오고, 없으면 "감지 미동작"으로 표시된다
+ * — 낙상 없음이 아니라 감지가 동작하지 않는 상태다 (F-W11). `VITE_USE_MOCK=1` 이면
+ * 시뮬레이션이 채운다.
  */
 function MonitoringPage() {
   if (import.meta.env.VITE_USE_MOCK === "1") useTick(); // eslint-disable-line react-hooks/rules-of-hooks -- 빌드 상수라 호출 순서가 바뀌지 않는다
@@ -67,7 +67,6 @@ function MonitoringPage() {
   const { data: devices = [] } = useDevices();
   const { data: config } = useConfig();
   const { data: fallPage } = useFalls({ limit: 5 });
-  const mvHistory = useMvHistory();
   const simulate = useSimulateFall();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeDeviceId, setActiveDeviceId] = useState<string | null>(null);
@@ -77,13 +76,6 @@ function MonitoringPage() {
   const falls = fallPage?.items ?? [];
   const threshold = active?.thresholdOverride ?? config?.presenceMvThreshold ?? 2.0;
   const wanderRatioThreshold = config?.wanderRatioThreshold ?? 1.8;
-  const chartData = mvHistory.map((p, i) => ({ i, mv: Number(p.mv.toFixed(3)) }));
-
-  // 레거시 로컬 백엔드 실시간 스트림 — VITE_ENABLE_LIVE=1 일 때만 연결한다.
-  const live = import.meta.env.VITE_ENABLE_LIVE === "1" ? useLiveStream() : null; // eslint-disable-line react-hooks/rules-of-hooks
-  const liveMode = !!live && live.wsUp && (live.last?.connected ?? false);
-  const liveChartData = live ? live.history.map((p, i) => ({ i, mv: p.mv_current ?? 0 })) : [];
-  const liveMvThreshold = live?.last?.presence_mv_threshold ?? threshold;
 
   // HOME 다중 장치 선택 (대표 장치 = 첫 거주자의 주 장치)
   const homeDevices = !isFacility ? devices : [];
@@ -96,6 +88,17 @@ function MonitoringPage() {
     (r) => r.deviceId === selectedDevice?.id || r.deviceIds.includes(selectedDevice?.id ?? ""),
   );
   const showDevicePicker = !isFacility && homeDevices.length > 1;
+
+  // 실시간 — 화면에 그리는 기기 하나를 구독한다. FACILITY 는 선택된 거주자의 주 장치,
+  // HOME 은 위에서 고른 장치. 소켓 자체는 LiveBridge 가 앱 전역에서 열어 둔다.
+  const watchedDeviceId = (isFacility ? active?.deviceId : selectedDevice?.id) ?? null;
+  const liveDevice = useLiveDevice(watchedDeviceId);
+  const livePresence = liveDevice?.presence ?? null;
+  const liveFall = liveDevice?.fall ?? null;
+  const liveMode = livePresence != null;
+  const mvHistory = useMvHistory(watchedDeviceId);
+  const chartData = mvHistory.map((p, i) => ({ i, mv: Number(p.mv.toFixed(3)) }));
+  const liveMvThreshold = livePresence?.mv_threshold ?? threshold;
 
   const runSimulation = async () => {
     try {
@@ -277,56 +280,58 @@ function MonitoringPage() {
               <StatCard
                 label="재실감지"
                 value={
-                  liveMode
-                    ? presenceLabel(live?.last?.presence_state === "present" ? "PRESENT" : "ABSENT")
+                  livePresence
+                    ? presenceLabel(livePresence.state === "present" ? "PRESENT" : "ABSENT")
                     : presenceLabel(selectedResident?.presence)
                 }
                 sub={
-                  liveMode && live?.last?.mv_current != null
-                    ? `MV ${live.last.mv_current.toFixed(2)}/${(live.last.presence_mv_threshold ?? liveMvThreshold).toFixed(2)} · WANDER ${(live.last.wander_ratio ?? 0).toFixed(2)}/${(live.last.wander_ratio_threshold ?? 0).toFixed(2)}`
+                  livePresence?.mv_current != null
+                    ? `MV ${livePresence.mv_current.toFixed(2)}/${liveMvThreshold.toFixed(2)} · WANDER ${(livePresence.wander_ratio ?? 0).toFixed(2)}/${(livePresence.wander_ratio_threshold ?? 0).toFixed(2)}`
                     : selectedResident?.presence != null
                       ? `MV ${(selectedResident.mv ?? 0).toFixed(2)}/${threshold.toFixed(2)}`
                       : "실시간 경로 연결 후 표시됩니다"
                 }
                 tone={
                   (
-                    liveMode
-                      ? live?.last?.presence_state === "present"
+                    livePresence
+                      ? livePresence.state === "present"
                       : selectedResident?.presence === "PRESENT"
                   )
                     ? "success"
                     : "default"
                 }
               />
+              {/* 낙상 축은 재실과 **독립**이다. 재실이 흐르고 있어도 추론이 안 붙었으면
+                  "감지 미동작"이어야 한다 — 그 부재를 "이상 없음"으로 보이면 안 된다. */}
               <StatCard
                 label="낙상 감지"
                 value={
-                  liveMode
-                    ? live?.last?.proba_fall != null
-                      ? stateLabel(live.last.detect_state ?? "IDLE")
-                      : "모델 미가동"
-                    : stateLabel(selectedResident?.state)
+                  liveFall ? stateLabel(liveFall.detect_state) : stateLabel(selectedResident?.state)
                 }
                 sub={
-                  liveMode && live?.last?.proba_fall != null
-                    ? `낙상 확률 ${(live.last.proba_fall * 100).toFixed(1)}% · 3초 윈도우 / 0.25초 주기`
+                  liveFall
+                    ? `낙상 확률 ${((liveFall.proba_fall ?? 0) * 100).toFixed(1)}% · 임계값 ${liveFall.threshold.toFixed(3)} · ${liveFall.postprocess}`
                     : `판정 임계값 ${(config?.threshold ?? 0.468).toFixed(3)} · 추론 경로 미연결`
                 }
                 tone={
-                  liveMode && live?.last?.proba_fall != null
-                    ? fallTone(live.last.detect_state ?? "IDLE")
-                    : fallTone(selectedResident?.state)
+                  liveFall ? fallTone(liveFall.detect_state) : fallTone(selectedResident?.state)
                 }
               />
               <StatCard
                 label="수신기 상태"
-                value={liveMode ? "수신 중" : DETECTION_INACTIVE_LABEL}
+                value={
+                  liveDevice?.online === true
+                    ? "수신 중"
+                    : liveDevice?.online === false
+                      ? "연결 끊김"
+                      : DETECTION_INACTIVE_LABEL
+                }
                 sub={
-                  liveMode
-                    ? `${live?.last?.hz_1s ?? 0}Hz · RSSI ${live?.last?.rssi ?? "—"}dBm`
+                  liveDevice?.link
+                    ? `${(liveDevice.link.hz_1s ?? 0).toFixed(0)}Hz · RSSI ${liveDevice.link.rssi ?? "—"}dBm · ${liveDevice.link.transport}`
                     : "엣지 텔레메트리 연결 후 표시됩니다"
                 }
-                tone={liveMode ? "success" : "default"}
+                tone={liveDevice?.online === true ? "success" : "default"}
               />
             </>
           )}
@@ -342,7 +347,8 @@ function MonitoringPage() {
               <div className="flex items-center gap-2">
                 {liveMode ? (
                   <span className="text-[10px] font-mono text-success px-2 py-0.5 rounded bg-success/10 border border-success/30">
-                    ● LIVE · {live?.last?.hz_1s ?? 0}Hz · {live?.history.length ?? 0} samples
+                    ● LIVE · {(liveDevice?.link?.hz_1s ?? 0).toFixed(0)}Hz · {chartData.length}{" "}
+                    samples
                   </span>
                 ) : chartData.length > 0 ? (
                   <span className="text-[10px] font-mono text-muted px-2 py-0.5 rounded bg-background border border-border">
@@ -366,12 +372,9 @@ function MonitoringPage() {
               </div>
             </div>
             <div className="p-4 h-72">
-              {liveMode || chartData.length > 0 ? (
+              {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={liveMode ? liveChartData : chartData}
-                    margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
-                  >
+                  <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                     <XAxis
                       dataKey="i"
                       tick={CHART_STYLE.tick}

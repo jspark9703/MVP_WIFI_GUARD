@@ -162,12 +162,14 @@ async def run_calibration(
     note in the migration plan); the frontend shows this actual phase/timing
     rather than a simplified placeholder.
 
-    silence_confirm_s defaults to 0.2s -- comfortably above the ~7ms it takes
-    in-flight UART bytes to drain at 921600 baud (one CSI frame is ~650 bytes),
-    while leaving ~0.8s of margin under the firmware's ~1s AGC-settle window
-    (csi_recv_calibrate's CSI_TRAIN_DURATION_US). A prior 0.7s default left
-    only ~0.3s of margin, risking an intermittent waiting_ack timeout if
-    scheduling jitter pushed past it.
+    silence_confirm_s defaults to 0.2s -- comfortably above the ~3.3ms it takes
+    in-flight UART bytes to drain at 2 Mbaud (one CSI frame is ~660 bytes; it
+    was ~7.2ms back when the link ran at 921600), while leaving ~0.8s of margin
+    under the firmware's ~1s AGC-settle window (csi_recv_calibrate's
+    CSI_TRAIN_DURATION_US). A prior 0.7s default left only ~0.3s of margin,
+    risking an intermittent waiting_ack timeout if scheduling jitter pushed
+    past it. The 2026-09-10 baud change only widened this margin, so the 0.2s
+    default still holds -- it is bounded by the AGC window, not by drain time.
 
     k_mv defaults to 2.0 -- deliberately tuned for sensitivity over precision as
     an interim measure; expect more false positives until this is retuned

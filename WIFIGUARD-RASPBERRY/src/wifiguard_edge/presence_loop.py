@@ -134,39 +134,61 @@ class PresenceLoop(threading.Thread):
             self._last_error = reason
 
     def _payload(self) -> dict[str, Any]:
-        """`_lock` 보유 없이 호출해도 안전 — 아래에서 잠깐씩만 잡는다.
-        reference/fall_detect/API.md의 DetectionInfo와 동일한 필드명을 쓴다."""
+        """`PresenceStatus` 필드명 그대로 dict 로. `_lock` 은 아래에서 잠깐씩만 잡는다.
+
+        **이름을 바꾸지 않는다.** 이 함수는 원래 `state`→`presence_state`,
+        `mv_threshold`→`presence_mv_threshold`, `just_changed`→`presence_just_changed` 로
+        개명하고 `seconds_since_activity` 를 통째로 버리고 있었다. 그 결과
+        `presence_samples.seconds_since_activity` 컬럼이 영원히 NULL 이 될 운명이었다.
+
+        `PresenceStatus`(state_machine.py:25-35) = `presence_samples` 데이터 컬럼 =
+        `wifiguard_contracts.mqtt.PresenceMsg` 가 모두 같은 이름을 쓴다. 그 사이에서
+        이름을 바꾸던 유일한 지점이 여기였다. 접두가 필요했던 이유는 구 WS 페이로드가
+        평탄한 dict 라 낙상의 `threshold` 와 충돌했기 때문인데, 새 WS 계약은
+        `{presence: {...}, fall: {...}}` 중첩이라 충돌 자체가 불가능하다.
+
+        회귀 방어: `tests/test_presence_payload.py`, 백엔드 `test_contract_parity.py`.
+        """
         with self._lock:
             p = self._last
             cfg = self.config
             if p is None:
+                # 아직 한 틱도 돌지 않았다. 임계값만 알려 주고 상태는 미상으로 둔다.
+                # 발행자(mqtt.publisher)는 state 가 None 이면 PresenceMsg 를 만들지 않는다 —
+                # "재실 미상"은 present 도 absent 도 아니기 때문이다.
                 return {
-                    "presence_state": None,
+                    "state": None,
                     "mv_current": None,
-                    "presence_mv_threshold": cfg.presence_mv_threshold,
                     "wander_current": None,
+                    "mv_threshold": cfg.presence_mv_threshold,
                     "wander_baseline": cfg.wander_baseline,
                     "wander_ratio_threshold": cfg.wander_ratio_threshold,
                     "wander_ratio": None,
                     "wander_confirmed": None,
                     "last_activity_at": None,
-                    "presence_just_changed": None,
+                    "seconds_since_activity": None,
+                    "just_changed": None,
                 }
             return {
-                "presence_state": p.state.value,
+                "state": p.state.value,
                 "mv_current": p.mv_current,
-                "presence_mv_threshold": p.mv_threshold,
                 "wander_current": p.wander_current,
+                "mv_threshold": p.mv_threshold,
                 "wander_baseline": p.wander_baseline,
                 "wander_ratio_threshold": p.wander_ratio_threshold,
                 "wander_ratio": p.wander_ratio,
                 "wander_confirmed": p.wander_confirmed,
                 "last_activity_at": p.last_activity_at,
-                "presence_just_changed": p.just_changed,
+                "seconds_since_activity": p.seconds_since_activity,
+                "just_changed": p.just_changed,
             }
 
+    def presence_payload(self) -> dict[str, Any]:
+        """MQTT `PresenceMsg` 의 상태 필드 11개. 발행자가 봉투(device_id·ts·seq)를 씌운다."""
+        return self._payload()
+
     def live_payload(self) -> dict[str, Any]:
-        """/ws/live에 합쳐 보낼 필드."""
+        """`presence_payload()` 의 별칭 — WS 중첩 계약의 `presence` 블록이 되는 값."""
         return self._payload()
 
     def status(self) -> dict[str, Any]:

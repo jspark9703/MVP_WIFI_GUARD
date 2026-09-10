@@ -20,9 +20,10 @@ import type {
 import { useStore as useMockStore } from "@/lib/mock-store";
 
 import { useAuth } from "../auth";
-import { API_BASE, USE_MOCK, apiFetch } from "../client";
+import { USE_MOCK, apiFetch } from "../client";
 import { qk } from "../keys";
 import * as mock from "../mock/hooks";
+import { useDetectionState, useMvSeries } from "../realtime/useLiveStream";
 import { ready, type QueryResultLike } from "../types";
 
 function useAuthed(): boolean {
@@ -161,38 +162,32 @@ export const useFacilityMembers: () => QueryResultLike<FacilityMember[]> =
   import.meta.env.VITE_USE_MOCK === "1" ? mock.useFacilityMembers : useFacilityMembersReal;
 
 // ── MV 시계열 (차트) ─────────────────────────────────────────────────
-/** 실모드는 실시간 경로가 없어 빈 배열(차트에 "감지 미동작" 플레이스홀더). 목업은 시뮬레이션 240샘플. */
-function useMvHistoryReal(): { t: number; mv: number }[] {
-  return EMPTY_HISTORY;
+/**
+ * 기기 하나의 MV 시계열. 실모드는 `/ws/live` 가 쌓은 것을, 목업은 시뮬레이션을 읽는다.
+ *
+ * `deviceId` 가 없으면 빈 배열이고, 차트는 "감지 미동작" 플레이스홀더를 그린다.
+ * 구 구현은 실모드에서 **항상** 빈 배열을 반환하는 스텁이었다.
+ */
+function useMvHistoryReal(deviceId?: string | null): { t: number; mv: number }[] {
+  return useMvSeries(deviceId);
 }
-const EMPTY_HISTORY: { t: number; mv: number }[] = [];
-function useMvHistoryMock(): { t: number; mv: number }[] {
+function useMvHistoryMock(_deviceId?: string | null): { t: number; mv: number }[] {
   return useMockStore((s) => s.mvHistory);
 }
-export const useMvHistory: () => { t: number; mv: number }[] =
+export const useMvHistory: (deviceId?: string | null) => { t: number; mv: number }[] =
   import.meta.env.VITE_USE_MOCK === "1" ? useMvHistoryMock : useMvHistoryReal;
 
 // ── 감지 상태 (F-W11 3상태) ─────────────────────────────────────────
 /**
- * ACTIVE  : 실시간 경로가 살아 있음 (이번 단계에서는 목업 시뮬레이션일 때만)
- * INACTIVE: 백엔드는 응답하지만 낙상 감지 경로가 없음 — "감지 미동작"
- * OFFLINE : 백엔드 자체가 응답하지 않음
+ * ACTIVE  : 낙상 판정이 실제로 흐르고 있음
+ * INACTIVE: 소켓은 붙었지만 **낙상 축이 없음** — "낙상 감지 미동작"
+ * OFFLINE : 소켓이 붙지 않음 (백엔드 미응답 또는 세션 만료)
+ *
+ * 재실만 오는 상태를 ACTIVE 로 치지 않는다. 재실은 엣지가 상시 계산하지만 낙상은 클라우드
+ * 추론이 붙어야 나오고, 그 부재를 "이상 없음"으로 보이면 안 된다 (안전 요구 F-W11).
+ * 구 구현은 `/health` ping 만 보고 **ACTIVE 를 반환하는 경로가 아예 없었다.**
  */
-function useDetectionStatusReal(): DetectionStatus {
-  const enabled = useAuthed();
-  const q = useQuery({
-    queryKey: ["health"],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
-      return res.ok;
-    },
-    enabled,
-    refetchInterval: 30_000,
-    retry: 0,
-  });
-  if (q.isError || q.data === false) return "OFFLINE";
-  return "INACTIVE";
-}
+const useDetectionStatusReal = useDetectionState;
 function useDetectionStatusMock(): DetectionStatus {
   const running = useMockStore((s) => s.running);
   const backendConnected = useMockStore((s) => s.backendConnected);

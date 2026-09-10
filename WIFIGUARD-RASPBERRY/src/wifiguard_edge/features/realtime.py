@@ -4,6 +4,24 @@
 compute_native_features 경로를 링버퍼 입력에 맞게 감싼 것이다.
 파이프라인: 균일 그리드 리샘플 -> 스트림 선택 -> PCA motion signal
           -> S3 scalogram (224,224) + PCA-ACF (1,128,64)
+
+## 함수 3개로 나뉘어 있다 (2026-09-10, D1)
+
+    extract_window_signal(times, amplitude, cfg) -> WindowSignal      ← 엣지(Pi)가 여기까지
+    features_from_signal(signal, fs_hz, cfg)     -> WindowFeatures    ← 클라우드 모델서버
+    extract_window_features(times, amplitude, cfg) -> WindowFeatures  ← 위 둘의 합성 (무변경)
+
+엣지가 S3(224,224)+ACF(1,128,64) **233KB**를 올리던 설계는 4Hz 기준 7.5Mbps/기기라
+성립하지 않았고, 개발 PC 벤치 p90 489ms 로 250ms 스트라이드 예산도 넘겼다. 절단점은
+`select_pc_signal()` 의 반환값 — S3 와 ACF **양쪽의 유일한 공통 조상**이며 약 2KB 다.
+
+`extract_window_features` 의 시그니처와 출력은 **바뀌지 않았다.** 벤치·회귀 대조가 이 함수를
+쓰고, 클라우드는 `features_from_signal` 을 쓴다. 둘의 동등성은
+`tests/test_feature_split.py` 가 배열 비트 단위로 단언한다.
+
+**클라우드가 이 모듈을 그대로 import 한다.** 복사본을 만들지 말 것 — 갈라져도 테스트는
+통과하고 모델 정확도만 조용히 떨어진다(common.py 상단 주석). 이 코드는 이미 `_reference/`
+안에서만 네 번 복사된 이력이 있다.
 """
 
 from __future__ import annotations
@@ -43,6 +61,21 @@ class FeatureConfig:
     # CWT scale 캐시가 적중하게 한다. 오프라인 파이프라인도 recording 전체
     # 중앙값 하나를 쓰므로 per-window 지터 흡수는 의미상 동일하다.
     fs_quantize_hz: float = 0.25
+
+
+@dataclass
+class WindowSignal:
+    """엣지가 클라우드로 올리는 것 — 서브캐리어 선택 + PCA 합성까지만 끝난 1-D 신호.
+
+    `signal` 은 `(window_samples,) float32` 로 fs=166.75 기준 500샘플 약 2KB 다.
+    S3(200,704B)+ACF(32,768B) 대비 117배 작다.
+    """
+
+    signal: np.ndarray  # (window_samples,) float32
+    fs_hz: float
+    window_samples: int
+    window_span_s: float
+    stats: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -88,15 +121,19 @@ def resample_uniform(times: np.ndarray, amplitude: np.ndarray, fs_hz: float) -> 
     return resampled
 
 
-def extract_window_features(
+def extract_window_signal(
     times: np.ndarray,
     amplitude: np.ndarray,
     config: FeatureConfig | None = None,
-) -> WindowFeatures:
-    """링버퍼에서 꺼낸 (시각, 진폭) 윈도우를 모델 입력 피처로 변환한다.
+) -> WindowSignal:
+    """링버퍼 윈도우 → 1-D 합성 대표신호. **엣지(Pi)가 담당하는 구간.**
 
     times: 단조 증가 초 단위 (unwrap 완료), amplitude: (frames, subcarriers).
     윈도우가 3초에 못 미치거나 프레임이 너무 적으면 ValueError.
+
+    단계: 중복 ts 제거 → fs 측정·양자화 → 서브캐리어 선택(정적 규칙) → 균일 리샘플
+          → 3초 절단 → 스트림 선택(q-metric) → PCA 합성.
+    여기까지는 numpy 만 쓴다 — CWT(ssqueezepy)는 다음 단계라 Pi 에 설치할 필요가 없다.
     """
     cfg = config or FeatureConfig()
     if times.size < 8:
@@ -126,8 +163,54 @@ def extract_window_features(
     window = resampled[-window_samples:]
 
     variance_radius = max(1, int(round(cfg.moving_variance_radius_seconds * fs_hz)))
-    selected_streams, stream_q = select_streams(window, omega=cfg.omega, w_radius=variance_radius)
+    selected_streams, _stream_q = select_streams(window, omega=cfg.omega, w_radius=variance_radius)
     signal, pc_stats = select_pc_signal(window, selected_streams, w_radius=variance_radius)
+    return WindowSignal(
+        signal=signal,
+        fs_hz=fs_hz,
+        window_samples=window_samples,
+        window_span_s=span,
+        stats={
+            **pc_stats,
+            "input_frames": int(times.size),
+            "input_subcarriers": int(amplitude.shape[1]),
+            "selected_subcarrier_count": int(len(selected)),
+            "selected_stream_count": int(len(selected_streams)),
+        },
+    )
+
+
+def require_exact_cwt() -> None:
+    """`ssqueezepy` 가 실제로 import 되는지 확인한다. **모델서버가 기동 시 호출할 것.**
+
+    없으면 `compute_s3_scalogram` 이 `fallback_cwt`(common.py:177)로 **조용히** 넘어가는데,
+    그 함수 docstring 이 스스로 "원본 대비 근사"라고 인정한다. 학습 때와 다른 피처가
+    생산되면 테스트는 전부 통과하고 모델 정확도만 떨어진다 — 가장 발견하기 어려운 종류의
+    고장이다. 프로덕션 경로에서는 폴백을 허용하지 않고 기동 자체를 막는다.
+
+    폴백은 개발 편의용으로만 남긴다(엣지는 애초에 이 경로를 타지 않는다).
+    """
+    try:
+        import ssqueezepy  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "ssqueezepy 가 없다. compute_s3_scalogram 이 근사 폴백(fallback_cwt)으로 넘어가"
+            "학습 때와 다른 S3 스칼로그램을 만들고, 그 차이는 정확도 저하로만 드러난다. "
+            "모델서버에는 `pip install 'wifiguard-edge[cwt]'` 로 설치할 것."
+        ) from exc
+
+
+def features_from_signal(
+    signal: np.ndarray,
+    fs_hz: float,
+    config: FeatureConfig | None = None,
+) -> WindowFeatures:
+    """1-D 대표신호 → 모델 입력 텐서. **클라우드 모델서버가 담당하는 구간.**
+
+    `ssqueezepy` 가 필요하다(CWT). 없어도 예외 없이 동작하지만 그것은 근사 폴백이며
+    프로덕션에서 쓰면 안 된다 — 호출자가 기동 시 `require_exact_cwt()` 로 막을 것.
+    """
+    cfg = config or FeatureConfig()
     s3, cwt_stats = compute_s3_scalogram(
         signal=signal,
         fs_hz=fs_hz,
@@ -146,18 +229,28 @@ def extract_window_features(
         lag_output_bins=cfg.acf_lag_output_bins,
         clip_percentile=cfg.acf_clip_percentile,
     )
-    stats = {
-        **pc_stats,
-        **cwt_stats,
-        "input_frames": int(times.size),
-        "input_subcarriers": int(amplitude.shape[1]),
-        "selected_subcarrier_count": int(len(selected)),
-        "selected_stream_count": int(len(selected_streams)),
-    }
     return WindowFeatures(
         s3=s3.astype(np.float32),
         acf=acf.astype(np.float32),
         fs_hz=fs_hz,
-        window_samples=window_samples,
-        stats=stats,
+        window_samples=int(len(signal)),
+        stats=dict(cwt_stats),
     )
+
+
+def extract_window_features(
+    times: np.ndarray,
+    amplitude: np.ndarray,
+    config: FeatureConfig | None = None,
+) -> WindowFeatures:
+    """링버퍼에서 꺼낸 (시각, 진폭) 윈도우를 모델 입력 피처로 변환한다.
+
+    위 두 함수의 합성이다. 시그니처와 출력은 분해 이전과 동일하다 — 벤치와 회귀 대조가
+    이 함수를 쓴다. 실제 파이프라인은 두 단계가 엣지와 클라우드로 나뉘어 실행된다.
+    """
+    cfg = config or FeatureConfig()
+    ws = extract_window_signal(times, amplitude, cfg)
+    features = features_from_signal(ws.signal, ws.fs_hz, cfg)
+    features.window_samples = ws.window_samples
+    features.stats = {**ws.stats, **features.stats}
+    return features

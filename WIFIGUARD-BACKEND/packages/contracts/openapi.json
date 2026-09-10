@@ -258,8 +258,15 @@
             "title": "Noisefloor"
           },
           "online": {
-            "title": "Online",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Online"
           },
           "ownerUserId": {
             "anyOf": [
@@ -321,7 +328,6 @@
           "name",
           "room",
           "connection",
-          "online",
           "calibrating",
           "calibrationStage",
           "calibrationProgress",
@@ -2265,7 +2271,7 @@
     }
   },
   "info": {
-    "description": "HOME/FACILITY 서비스 API — 계정·시설·기기·거주자·낙상 이력·이벤트 로그·수신자·설정 (실시간·추론 경로는 후속 단계)",
+    "description": "HOME/FACILITY 서비스 API — 계정·시설·기기·거주자·낙상 이력·이벤트 로그·수신자·설정 + 실시간 재실(/ws/live)",
     "title": "WIFI-GUARD API",
     "version": "0.1.0"
   },
@@ -4950,6 +4956,30 @@
         "summary": "List Ports",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/realtime/schema": {
+      "get": {
+        "description": "프론트 코드젠 입력. OpenAPI 가 WebSocket 을 표현하지 못하므로 따로 낸다.\n\n`tools/export_openapi.py` 가 만드는 `realtime.schema.json` 과 같은 내용이다.",
+        "operationId": "realtime_schema_realtime_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Realtime Schema Realtime Schema Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "/ws/live 프레임 JSON Schema",
+        "tags": [
+          "realtime"
         ]
       }
     }

@@ -10,7 +10,6 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:
   "",
 );
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === "1";
-export const ENABLE_LIVE = import.meta.env.VITE_ENABLE_LIVE === "1";
 export const API_V1 = "/api/v1";
 
 const REFRESH_KEY = "csi-guard-refresh";

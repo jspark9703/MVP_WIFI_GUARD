@@ -4,12 +4,26 @@
 
 - 접두 없음 : /, /health, /ports  (routers/health.py — 드라이런·프론트 useBackendUp 호환)
 - /api/v1   : auth · facilities · devices · residents · falls · event-logs · recipients · config · account
-- main.py(현행 로컬 백엔드 계약 원본)는 마운트하지 않는다.
+- WS        : /ws/live  (+ GET /realtime/schema — 프론트 코드젠 입력)
+- main.py(구 로컬 백엔드 계약 원본)는 마운트하지 않는다.
+
+## 인제스트가 이 프로세스 안에서 돈다
+
+`wifiguard_ingest` 는 라이브러리이고, 실행 주체가 이 앱의 lifespan 이다. REST 핸들러가
+`LiveCache` 를 동기로 읽고 WS 가 인메모리로 팬아웃하려면 같은 주소 공간이어야 하기 때문이다.
+
+**그래서 uvicorn 워커는 1개여야 한다.** 워커가 여럿이면 각자 별도 Kafka 컨슈머 그룹 멤버가
+되어 메시지가 분산되고 캐시가 쪼개진다. `deploy/aws/wifiguard-api.service` 참조.
+
+MQTT·Kafka 설정이 없으면 인제스트는 조용히 꺼진 채로 뜬다 — CRUD 는 실시간 경로와
+무관하게 동작해야 하고, AWS 에는 아직 두 인스턴스가 없다(M4).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,11 +37,38 @@ log = logging.getLogger("wifiguard_api")
 API_PREFIX = "/api/v1"
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """인제스트 기동·정지. 실패해도 API 는 떠야 한다."""
+    service = None
+    try:
+        from wifiguard_ingest import start_all
+
+        service = start_all(loop=asyncio.get_running_loop())
+        app.state.ingest = service
+    except ImportError:
+        log.info("wifiguard_ingest 미설치 — 실시간 경로 없이 기동한다")
+        app.state.ingest = None
+    except Exception:
+        # 브로커가 죽었다고 CRUD 까지 못 쓰게 되면 안 된다.
+        log.exception("인제스트 기동 실패 — 실시간 경로 없이 계속한다")
+        app.state.ingest = None
+    try:
+        yield
+    finally:
+        if service is not None:
+            try:
+                service.stop()
+            except Exception:
+                log.exception("인제스트 정지 중 예외")
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="WIFI-GUARD API",
         version="0.1.0",
-        description="HOME/FACILITY 서비스 API — 계정·시설·기기·거주자·낙상 이력·이벤트 로그·수신자·설정 (실시간·추론 경로는 후속 단계)",
+        description="HOME/FACILITY 서비스 API — 계정·시설·기기·거주자·낙상 이력·이벤트 로그·수신자·설정 + 실시간 재실(/ws/live)",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -40,6 +81,13 @@ def create_app() -> FastAPI:
         log.warning("JWT_SECRET 이 기본값(changeme)입니다 — 개발 환경 외에서는 반드시 교체하세요.")
 
     app.include_router(health.router)
+
+    try:
+        from .realtime import router as realtime_router
+
+        app.include_router(realtime_router)
+    except ImportError:  # wifiguard_ingest 미설치 환경
+        log.info("realtime 라우터를 마운트하지 않는다 (wifiguard_ingest 없음)")
 
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(auth.router)

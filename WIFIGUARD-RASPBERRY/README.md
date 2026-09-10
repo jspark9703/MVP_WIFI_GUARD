@@ -17,11 +17,19 @@ CSI를 SPI로 받아 **재실을 판정하고**, 활동 구간의 **피처를 �
                       [AWS IoT Core] ──IoT Rule──► [Kafka]
 ```
 
-> ## ⚠ 현재 상태: 이식 배치만 완료. 실행되지 않는다.
+> ## 현재 상태 (2026-09-10): 프로세스로 뜨고, 브로커까지 발행한다.
 >
-> 재실감지(`presence/`)·피처추출(`features/`)·링버퍼(`csi/`)는 **이식이 끝났고 import 된다.**
-> 엔트리포인트(`__main__.py`), 설정 로더(`config.py`), 게이팅, MQTT, 스풀은 **아직 없다.**
-> 무엇이 남았는지는 [PORTING.md](PORTING.md) §2를 볼 것.
+> `python -m wifiguard_edge` 로 기동한다. 수집 → 재실감지 → 게이팅 → 대표신호 → MQTT 발행이
+> 이어져 있고, 로컬 Mosquitto 로 실측 검증했다(presence 4Hz · signal 4Hz · telemetry 1Hz,
+> 오류 0). Pi·수신기 없이도 `--transport replay` 로 전 배선이 돈다. `pytest` **77개** 통과.
+>
+> **아직 없는 것**: 캘리브레이션 명령 처리(`cmd` 는 `ping` 만 등록됨 — 나머지는 error ack로
+> 답한다), 단절 구간 스풀(`spool/`), SPI 전송(짝 펌웨어 없음), 실기 검증.
+>
+> **업링크 경계가 2026-09-10에 바뀌었다.** 이 레포는 이제 **1-D 합성 대표신호**까지만 만든다.
+> S3 스칼로그램·PCA-ACF 변환은 클라우드 모델서버가 한다. 절단점은
+> `features/common.py:52-93` `select_pc_signal()` 의 반환값이며, 실측으로
+> **엣지 몫 p90 13.7ms / 업링크 1/117** 이다(아래 벤치).
 
 ---
 
@@ -29,11 +37,11 @@ CSI를 SPI로 받아 **재실을 판정하고**, 활동 구간의 **피처를 �
 
 | 하는 것 | 하지 않는 것 |
 |---|---|
-| CSI 수신 · 링버퍼 적재 | **낙상 판정** → 클라우드 (피처까지만 만든다) |
+| CSI 수신 · 링버퍼 적재 | **낙상 판정** → 클라우드 |
 | **재실/움직임 감지 (이 레포가 유일한 권위)** | 신호 수집 하드웨어 제어 → ESP32-C5 펌웨어 |
 | 게이팅 — 활동 구간에만 업로드 | 영속 저장 → 클라우드 DB (여기 SQLite는 단절 버퍼 전용) |
-| S3 스칼로그램 + PCA-ACF 피처 추출 | 사용자 인증·대시보드 → 백엔드/프론트엔드 |
-| MQTT/TLS 퍼블리시, 4단계 캘리브레이션 | |
+| 서브캐리어 선택 · **PCA 합성 대표신호**(1-D)까지 | **S3 스칼로그램·PCA-ACF 변환** → 클라우드 모델서버 |
+| MQTT/TLS 퍼블리시, 4단계 캘리브레이션 | 사용자 인증·대시보드 → 백엔드/프론트엔드 |
 
 **네트워크가 끊기면**: 재실감지는 계속 동작한다. 낙상 감지는 **중단된다.** 안전 기능이므로 무증상으로 넘기면 안 되고, `telemetry`로 명시 보고해야 한다.
 
@@ -43,17 +51,24 @@ CSI를 SPI로 받아 **재실을 판정하고**, 활동 구간의 **피처를 �
 
 ```
 src/wifiguard_edge/
-  presence/        재실감지 신호체인 + 상태머신   [이식 완료 · 무변경]
-  features/        S3 스칼로그램 + PCA-ACF        [이식 완료 · 무변경 · 계약 고정]
-  csi/             링버퍼 · UART 프레임 파서       [이식 완료 · 무변경]
-  presence_loop.py PresenceLoop 스레드 (0.25s)     [이식 완료 · import만 수정]
-  calibration/     4단계 61초 캘리브레이션         [이식 완료 · import만 수정]
-  transport/       SPI 마스터 + 개발 PC 목        [이식 완료 · 계약 미구현]
-  mqtt/  spool/    클라우드 업링크 · 단절 버퍼      [비어 있음]
+  __main__.py      엔트리포인트 — 스레드 4개 수명 관리          [M1]
+  config.py        default.toml + device.toml → dataclass       [M1]
+  gating.py        업로드 게이트 (재실 기반 · ABSENT 유예)      [M1]
+  feature_loop.py  FeatureLoop 0.25s — 대표신호 생성            [M1]
+  presence_loop.py PresenceLoop 0.25s — 상시                    [payload 이름 정정 2026-09-10]
+  presence/        재실감지 신호체인 + 상태머신                 [이식 · 무변경]
+  features/        선택 → 리샘플 → PCA(엣지) → S3·ACF(클라우드) [3분해 2026-09-10 · 계약 고정]
+  csi/             링버퍼 · UART 프레임 파서                     [이식 · 무변경]
+  calibration/     4단계 61초 캘리브레이션            [이식 · cmd 연결은 미구현]
+  transport/       base.py(Protocol) · replay_source.py          [M1]
+                   spi_reader.py — 짝 펌웨어 없어 사용 불가
+  mqtt/            codec · publisher(논블로킹 큐) · command      [M1]
+  spool/           단절 버퍼                                     [비어 있음]
 config/            default.toml · device.toml.example
-deploy/            systemd unit · install.sh      [뼈대 · 실기 미검증]
-tools/             bench_pipeline.py              [이식 완료 · 추론부 제거 필요]
-tests/             test_protocol.py
+deploy/            systemd unit · install.sh                     [뼈대 · 실기 미검증]
+tools/             bench_pipeline.py(--stages) · replay_edge.py
+tests/             77개 — protocol · presence_payload · feature_split
+                   config_parity · gating · transport_contract · units · no_cwt_on_edge
 docs/              명세 문서
 _reference/        승계하지 않는 참조 코드
 ```
@@ -71,15 +86,48 @@ sudo bash deploy/install.sh          # SPI 활성화 · gpio 그룹 · tmpfs 로
 ## 지금 돌려볼 수 있는 것
 
 ```bash
-# 이식된 패키지가 import 되는지
-PYTHONPATH=src python -c "from wifiguard_edge.presence import PresenceConfig, PresenceDetector; print('OK')"
-PYTHONPATH=src python -c "from wifiguard_edge.features import FeatureConfig, extract_window_features; print('OK')"
+cp config/device.toml.example config/device.toml   # tenant_id · device_id 를 채운다
+uv sync --extra mqtt --extra dev                   # Pi 는 cwt extra 를 넣지 않는다
 
-# 피처 추출 지연 벤치 — ★ 먼저 tools/bench_pipeline.py 의 inference import 를 걷어내야 한다
-PYTHONPATH=src python tools/bench_pipeline.py --fs 166.67
+python -m pytest                                   # 77개
+
+# ① 브로커 없이 파이프라인만 (발행 내용을 로그로)
+python -m wifiguard_edge --transport replay --no-mqtt --echo --duration 20
+
+# ② 로컬 Mosquitto 로 실제 발행
+docker run -d --name wg-mosq -p 1883:1883 eclipse-mosquitto:2.0 \
+  sh -c "printf 'listener 1883 0.0.0.0\nallow_anonymous true\n' > /m.conf && exec mosquitto -c /m.conf"
+python -m wifiguard_edge --transport replay        # device.toml 에 broker_host=localhost, tls=false
+docker exec wg-mosq mosquitto_sub -h localhost -t 'wifiguard/#' -v
+
+# ③ 결정론적 recording 으로 재생 (회귀 비교용)
+python tools/replay_edge.py synth --out recordings/synth.npz --seconds 120
+python -m wifiguard_edge --transport replay --replay-source recordings/synth.npz
+
+# ④ 실기 (수신기 연결 시) — device.toml 의 [transport] kind="serial"
+python -m wifiguard_edge
 ```
 
-`python -m wifiguard_edge`는 `__main__.py`가 없어 아직 동작하지 않는다.
+주요 옵션: `--no-mqtt`(브로커 없이) · `--echo`(발행 내용 로그) · `--duration N`(N초 후 종료) ·
+`--transport {serial,replay,spi}` · `--log-level`.
+
+### 벤치 — 엣지 몫과 클라우드 몫
+
+```bash
+python tools/bench_pipeline.py --fs 166.75 --stages
+```
+
+개발 PC 실측 (fs 166.75Hz, 245 서브캐리어, 40회):
+
+| 구간 | 담당 | median | p90 | 250ms 예산 |
+|---|---|---:|---:|---|
+| `extract_window_signal` (선택 → 리샘플 → PCA) | **엣지** | 10.8ms | **13.7ms** | 예 (18배 여유) |
+| `features_from_signal` (CWT + ACF) | 클라우드 | 49.9ms | 818.2ms | — |
+| 합계 (분해 이전과 같은 일) | — | 60.6ms | 828.9ms | **아니오** |
+
+엣지 몫은 시간의 17.8%, 업링크는 1,996B 대 233,472B = **1/117**.
+합계가 예산을 넘는다는 것이 D1의 근거다 — 이 일을 Pi 에 두면 애초에 성립하지 않았다.
+클라우드 쪽 p90 818ms 는 모델서버 처리량 제약으로 남아 있다(계획서 R1).
 
 ---
 

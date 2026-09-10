@@ -3,7 +3,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useAuth } from "@/api/auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { FallAlarmModal } from "@/components/FallAlarmModal";
-import { BackendDetectionBridge } from "@/components/BackendDetectionBridge";
+import { LiveBridge } from "@/components/LiveBridge";
 
 /** 인증 없이 접근 가능한 경로의 단일 진실원. */
 export const PUBLIC_PATHS = ["/login", "/signup"];
@@ -41,8 +41,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <AppSidebar />
       <main className="flex-1 overflow-y-auto">{children}</main>
       <FallAlarmModal />
-      {/* 레거시 실시간 브리지(/ws/live → 목업 스토어)는 VITE_ENABLE_LIVE=1 일 때만 */}
-      {import.meta.env.VITE_ENABLE_LIVE === "1" && <BackendDetectionBridge />}
+      {/* 실시간 소켓을 앱 전역에서 하나 유지하고 낙상 전이를 알람으로 올린다.
+          HOME/FACILITY 구분 없이 항상 렌더된다 — 다기기 관제가 필요한 쪽이 FACILITY 다. */}
+      <LiveBridge />
     </div>
   );
 }

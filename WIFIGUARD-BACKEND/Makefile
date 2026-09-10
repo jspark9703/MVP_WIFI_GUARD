@@ -36,7 +36,7 @@ seed:            ## 개발용 시드 데이터 (목업 시드 재현). --reset �
 api:             ## 서비스 API 개발 서버 (http://127.0.0.1:8000/docs)
 	uv run uvicorn wifiguard_api.app:app --host 127.0.0.1 --port 8000 --reload
 
-openapi:         ## OpenAPI 스냅샷 → packages/contracts/openapi.json (프론트 코드젠 입력)
+openapi:         ## 스키마 스냅샷 2종 → packages/contracts/{openapi,realtime.schema}.json (프론트 코드젠 입력)
 	uv run python tools/export_openapi.py
 
 test:            ## pytest (DATABASE_URL_TEST, 기본 로컬 wifiguard_test DB)

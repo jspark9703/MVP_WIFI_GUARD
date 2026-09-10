@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from wifiguard_contracts import topics
 from wifiguard_contracts.api import DeviceIn, DeviceOut, DevicePatch, ErrorOut
 from wifiguard_db.models import Device, ResidentDevice
 
@@ -17,10 +18,25 @@ router = APIRouter(prefix="/devices", tags=["devices"])
 _ERR = {401: {"model": ErrorOut}, 404: {"model": ErrorOut}}
 
 
+def scope_tenant_id(scope: Scope) -> str:
+    """스코프 → MQTT tenant 문자열. `presence_samples.facility_id` 에도 같은 값이 들어간다.
+
+    분기 기준은 `is_facility` 다. `facility_id is None` 과 동치이긴 하나(users 테이블의
+    service/role/facility_id CHECK 가 보장한다) 그 불변식에 기대지 않고 명시한다.
+    """
+    return topics.tenant_id(
+        facility_id=scope.facility_id if scope.is_facility else None,
+        user_id=scope.user_id,
+    )
+
+
 def issue_mqtt_topic(scope: Scope, device_id: uuid.UUID) -> str:
-    """명세 backend §7.1 — wifiguard/{facility}/{device}. HOME 은 {facility} 자리에 home-{userId}."""
-    tenant = str(scope.facility_id) if scope.is_facility else f"home-{scope.user_id}"
-    return f"wifiguard/{tenant}/{device_id}"
+    """명세 backend §7.1 — wifiguard/{facility}/{device}. HOME 은 {facility} 자리에 home-{userId}.
+
+    문자열 조립은 `wifiguard_contracts.topics` 가 유일한 출처다 — 엣지의 발행 토픽과
+    브리지의 파싱이 같은 규칙을 따로 알고 있으면 조용히 갈라진다.
+    """
+    return topics.device_base(scope_tenant_id(scope), device_id)
 
 
 def _validate_target(connection: str, mqtt_topic: str | None, serial_port: str | None) -> None:
@@ -28,14 +44,59 @@ def _validate_target(connection: str, mqtt_topic: str | None, serial_port: str |
         raise ApiError(422, "VALIDATION_ERROR", "입력값이 올바르지 않습니다.", {"serialPort": "SERIAL 연결은 포트가 필요합니다."})
 
 
+def to_out(dev: Device) -> DeviceOut:
+    """`online` 만 최신값 캐시로 덮는다. 나머지는 DB 행 그대로.
+
+    DB 의 `devices.online` 은 NOT NULL 이라 "모름"을 담지 못한다. 텔레메트리를 한 번도
+    받은 적 없는 기기를 `False`("연결 끊김")로 단정 표시하는 것이 지금까지의 문제였다.
+    캐시에 항목이 없으면 **None** 을 내보내 프론트가 3상태로 구분하게 한다.
+
+    캐시에 있으면 그 값이 DB 보다 정확하다 — 텔레메트리 싱크는 30초에 한 번만 쓰고
+    그 사이 변화는 캐시에만 있기 때문이다(telemetry_sink.MIN_WRITE_INTERVAL_S).
+    """
+    out = DeviceOut.model_validate(dev)
+    live = _live_state(dev.id)
+    if live is None:
+        out.online = None
+        return out
+    out.online = live.online(_offline_after_s())
+    if live.last_seen_at is not None:
+        out.last_seen_at = live.last_seen_at
+    return out
+
+
+def _live_state(device_id: uuid.UUID):
+    try:
+        from wifiguard_ingest.service import get_service
+    except ImportError:
+        return None
+    service = get_service()
+    return service.cache.get(device_id) if service else None
+
+
+def _offline_after_s() -> float:
+    """유예 임계값의 출처는 **LiveCache** 다 — 타임스탬프를 들고 있는 쪽이 소유해야 한다.
+
+    settings 에도 같은 값이 있지만 그쪽은 캐시를 만들 때 쓰는 초기값이고, 런타임에 바꾸면
+    두 값이 갈라진다. 읽을 때는 항상 캐시를 본다.
+    """
+    try:
+        from wifiguard_ingest.service import get_service
+    except ImportError:
+        return 15.0
+    service = get_service()
+    return service.cache.offline_after_s if service else 15.0
+
+
 @router.get("", response_model=list[DeviceOut], responses=_ERR)
-def list_devices(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> list[Device]:
-    return list(db.execute(select(Device).where(scope_filter(Device, scope)).order_by(Device.created_at)).scalars())
+def list_devices(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> list[DeviceOut]:
+    rows = db.execute(select(Device).where(scope_filter(Device, scope)).order_by(Device.created_at)).scalars()
+    return [to_out(d) for d in rows]
 
 
 @router.post("", response_model=DeviceOut, status_code=status.HTTP_201_CREATED,
              responses={**_ERR, 409: {"model": ErrorOut}, 422: {"model": ErrorOut}})
-def create_device(body: DeviceIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> Device:
+def create_device(body: DeviceIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> DeviceOut:
     _validate_target(body.connection, body.mqtt_topic, body.serial_port)
     device_id = uuid.uuid4()
     topic = body.mqtt_topic.strip() if body.mqtt_topic else None
@@ -54,16 +115,16 @@ def create_device(body: DeviceIn, scope: Scope = Depends(get_scope), db: Session
         raise ApiError(409, "TOPIC_TAKEN", "이미 사용 중인 MQTT 토픽입니다.") from exc
     add_log(db, scope, "INFO", f"장치 등록: {dev.name} ({dev.room}) · {dev.connection}", device_id=dev.id)
     db.commit()
-    return dev
+    return to_out(dev)
 
 
 @router.get("/{device_id}", response_model=DeviceOut, responses=_ERR)
-def get_device(device_id: uuid.UUID, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> Device:
-    return scoped_get(db, Device, device_id, scope, what="장치")
+def get_device(device_id: uuid.UUID, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> DeviceOut:
+    return to_out(scoped_get(db, Device, device_id, scope, what="장치"))
 
 
 @router.patch("/{device_id}", response_model=DeviceOut, responses={**_ERR, 409: {"model": ErrorOut}})
-def patch_device(device_id: uuid.UUID, body: DevicePatch, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> Device:
+def patch_device(device_id: uuid.UUID, body: DevicePatch, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)) -> DeviceOut:
     dev = scoped_get(db, Device, device_id, scope, what="장치")
     data = body.model_dump(exclude_unset=True)
     prev_stage = dev.calibration_stage
@@ -82,7 +143,7 @@ def patch_device(device_id: uuid.UUID, body: DevicePatch, scope: Scope = Depends
     elif prev_stage == "IDLE" and dev.calibration_stage == "LEAVING":
         add_log(db, scope, "WARN", f"[{dev.name}] 재설정 시작 · 공간을 비워주세요 (약 61초 소요)", device_id=dev.id)
     db.commit()
-    return dev
+    return to_out(dev)
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT, responses={**_ERR, 409: {"model": ErrorOut}})

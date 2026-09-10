@@ -10,7 +10,11 @@ Group=ec2-user
 WorkingDirectory=/opt/wifiguard-api
 EnvironmentFile=/etc/wifiguard/api.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/wifiguard-api/.venv/bin/uvicorn wifiguard_api.app:app --host 0.0.0.0 --port 8000 --proxy-headers
+# ★ 워커 1 고정. 이 프로세스의 lifespan 이 wifiguard_ingest 를 기동하고, Kafka 컨슈머와
+#   LiveCache/LiveHub 가 **이 프로세스의 인메모리 상태**다. 워커를 늘리면 각 워커가 별도
+#   컨슈머 그룹 멤버가 되어 메시지가 분산되고 캐시가 쪼개진다 — REST 가 읽는 재실 상태와
+#   WS 가 밀어 주는 값이 워커마다 달라진다. 늘리려면 먼저 Redis pub/sub 을 도입할 것.
+ExecStart=/opt/wifiguard-api/.venv/bin/uvicorn wifiguard_api.app:app --host 0.0.0.0 --port 8000 --proxy-headers --workers 1
 Restart=always
 RestartSec=5
 StandardOutput=journal

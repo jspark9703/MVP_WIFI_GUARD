@@ -1,24 +1,46 @@
 # 기기별 설정. 실제 파일(device.toml)은 gitignore 대상이다.
 #   cp config/device.toml.example config/device.toml
+#
+# 여기 있는 값은 config/default.toml 을 덮어쓴다. default.toml 에 없는 키를 쓰면
+# 기동 시 오류가 난다 — 오타를 조용히 무시하지 않기 위해서다 (config.py).
 
 [device]
-facility_id = "home-abcd1234"   # HOME 계정은 "home-{userId}" 형태. FACILITY는 시설 ID
-device_id   = "rpi-livingroom"  # 토픽: wifiguard/{facility_id}/{device_id}/...
+tenant_id = "home-abcd1234"     # HOME 은 "home-{userId}", FACILITY 는 시설 UUID
+device_id = "00000000-0000-0000-0000-000000000000"
+# 토픽은 서버가 발급한다: wifiguard/{tenant_id}/{device_id}/{presence|telemetry|signal|cmd|ack}
+# 값은 백엔드 `GET /api/v1/devices` 의 mqttTopic 에서 그대로 가져온다.
 
 [mqtt]
 broker_host = "xxxxxxxxxx-ats.iot.ap-northeast-2.amazonaws.com"
 broker_port = 8883
+# 개발용 로컬 Mosquitto 는 평문 1883 을 쓴다:
+#   broker_host = "localhost"
+#   broker_port = 1883
+#   tls = false
+tls         = true
 ca_cert     = "deploy/certs/AmazonRootCA1.pem"
 client_cert = "deploy/certs/device.pem.crt"
 client_key  = "deploy/certs/device.private.key"
 
 [transport]
-kind = "spi"          # "spi" (Pi 실기) | "serial" (현행 UART 폴백) | "mock" (개발 PC)
-# --- kind = "spi" ---
+# "serial" — 현재 유일하게 동작하는 실기 경로 (UART, csi_recv 펌웨어)
+# "replay" — Pi·수신기 없이 개발 PC 에서 전 배선 구동 (tools/replay_edge.py)
+# "spi"    — ★ 아직 쓸 수 없다. 짝이 되는 ESP 펌웨어에 SPI slave 코드가 없고,
+#            transport/protocol.py 의 프레임 정의(CSI 128B)가 펌웨어가 실제로 내보내는
+#            612B 를 담지 못한다. 자세한 내용은 ../WIFIGUARD-ESP/README.md 의 SPI 절.
+kind = "serial"
+
+# --- kind = "serial" ---
+serial_port = ""        # 비우면 자동 탐지 (pyserial list_ports)
+baudrate = 2000000      # ★ 펌웨어 CONFIG_ESP_CONSOLE_UART_BAUDRATE 와 반드시 같아야 한다.
+                        #   921600 → 2000000 (2026-09-10). 어긋나면 프레임이 하나도 파싱되지 않는다.
+
+# --- kind = "replay" ---
+replay_source = "synthetic"   # "synthetic" | 저장된 recording 경로
+replay_speed = 1.0            # 1.0 = 실시간
+
+# --- kind = "spi" (미사용) ---
 spi_bus = 0
 spi_device = 0
 max_speed_hz = 10000000
-gpio_data_ready = 25  # BCM, RISING
-# --- kind = "serial" ---
-serial_port = ""      # 비우면 자동 탐지
-baudrate = 921600
+gpio_data_ready = 25    # BCM, RISING

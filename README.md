@@ -4,22 +4,36 @@
 
 > **이 디렉토리는 부모 레포에서 `.gitignore` 처리되어 있다.** 각 하위 폴더는 준비가 끝나면 **독립 GitHub 레포**로 올라간다. 부모 레포(Lovable 동기화 브랜치)에 절대 커밋하지 말 것 — ESP 하나만 1.6GB다.
 
-배치 작업일: 2026-09-03 · 명세 작성일: 2026-08-04 (v1.0) · 검토 보고서 [REVIEW_20260907.md](REVIEW_20260907.md) (§8 클라우드 기동 결과, §9 2차 구현 결과)
+> ## 📄 현재 구현 상태의 정본: [DOCS/CSI-Guard_구현현황_v2.0_20260910.md](DOCS/CSI-Guard_구현현황_v2.0_20260910.md)
+>
+> 무엇이 동작하고 무엇이 없는지, 확정된 아키텍처 결정 5가지, 실측 수치, 남은 작업과 리스크,
+> AWS 현황을 한 문서에 정리했다. **처음 보는 사람은 여기부터.**
+
+배치 작업일: 2026-09-03 · 명세 작성일: 2026-08-04 (v1.0) · 검토 보고서 [REVIEW_20260907.md](REVIEW_20260907.md) (§8 클라우드 기동, §9 2차 구현) · 실시간 파이프라인 계획 `~/.claude/plans/rosy-wobbling-balloon.md`
 
 ---
 
 ## 레포 4종
 
 ```
-[ESP32-C5 TX] ──ESP-NOW 5GHz──► [ESP32-C5 RX] ──SPI──► [Raspberry Pi] ──MQTT/TLS──► [Cloud] ──REST/WS──► [Web]
-      └──────── WIFIGUARD-ESP ────────┘            WIFIGUARD-RASPBERRY        WIFIGUARD-BACKEND   WIFIGUARD-FRONTEND
+[ESP32-C5 TX] ──ESP-NOW 5GHz──► [ESP32-C5 RX] ──UART 2Mbaud──► [Raspberry Pi] ──MQTT/TLS──► [Cloud] ──REST/WS──► [Web]
+      └──────── WIFIGUARD-ESP ────────┘                 WIFIGUARD-RASPBERRY       WIFIGUARD-BACKEND   WIFIGUARD-FRONTEND
 ```
+
+> 명세는 ESP↔Pi를 **SPI**로 규정하지만 **펌웨어에 SPI slave 코드가 없다.** 실제로 동작하는 유일한
+> 경로는 UART이며, Pi의 SPI 프로토콜 정의(CSI 128B/64서브캐리어)는 펌웨어가 실제로 내보내는
+> 612B/306서브캐리어를 담지 못한다. SPI 전환은 후속 과제다(계획서 R5).
+>
+> **UART는 921600 → 2,000,000으로 올렸다(2026-09-10).** 921600은 660B 프레임 기준 약 140 fps가
+> 상한이라 실측 수신율 약 167Hz를 감당하지 못했다. 펌웨어 실측도 같은 결론이다(UART TX가 패킷당
+> 7.16ms로 Wi-Fi 콜백을 블로킹). 새 펌웨어를 플래시하면 **921600을 가정한 기존 도구는 멈춘다** —
+> 영향 범위는 [WIFIGUARD-ESP/README.md](WIFIGUARD-ESP/README.md)의 baud 절에 표로 정리했다.
 
 | 폴더 | 역할 | 명세 | 상태 | 크기 |
 |---|---|---|---|---:|
-| [WIFIGUARD-RASPBERRY/](WIFIGUARD-RASPBERRY/) | 엣지 — CSI 수집 · **재실감지** · 피처 추출 · MQTT 업링크 | [raspberry](WIFIGUARD-RASPBERRY/docs/WIFI-GUARD_레포명세_raspberry_v1.0_20260804.md) | 이식 배치 완료 · import·`pytest`(5) 통과 · `tools/bench_pipeline.py` 피처 추출 전용으로 정리(2026-09-08) · 엔트리포인트·MQTT·게이팅 미구현 | ~400KB |
-| [WIFIGUARD-BACKEND/](WIFIGUARD-BACKEND/) | 클라우드 — 서비스 API · DB · (후속) Kafka · **낙상 추론** · 알림 · MLOps | [backend](WIFIGUARD-BACKEND/docs/WIFI-GUARD_레포명세_backend_v1.0_20260804.md) | **HOME/FACILITY 서비스 API `/api/v1` + PostgreSQL(Alembic) 구현, AWS EC2 2대 기동 완료(2026-09-08, `deploy/aws/`)** · 실시간·추론·MLOps 미구현 · `_reference/` 이식본은 의도적으로 import 불가 | ~112MB |
-| [WIFIGUARD-FRONTEND/](WIFIGUARD-FRONTEND/) | 웹 관제 대시보드 — 클라우드 실데이터 | [frontend](WIFIGUARD-FRONTEND/docs/WIFI-GUARD_레포명세_frontend_v1.0_20260804.md) | **전 라우트 실 API 전환 완료(TanStack Query, 2026-09-08)** · 목업은 `VITE_USE_MOCK=1` 데모 전용 · 실시간 카드는 "감지 미동작" | ~3MB |
+| [WIFIGUARD-RASPBERRY/](WIFIGUARD-RASPBERRY/) | 엣지 — CSI 수집 · **재실감지** · 서브캐리어 선택·PCA 합성 · MQTT 업링크 | [raspberry](WIFIGUARD-RASPBERRY/docs/WIFI-GUARD_레포명세_raspberry_v1.0_20260804.md) | **엔트리포인트·설정·게이팅·MQTT 구현 완료(2026-09-10) — 브로커까지 실측 발행** · `pytest` 77 · Pi 없이 `--transport replay` 로 전 배선 구동 · 캘리브레이션 cmd·스풀·실기 미검증 | ~400KB |
+| [WIFIGUARD-BACKEND/](WIFIGUARD-BACKEND/) | 클라우드 — 서비스 API · DB · Kafka · **피처 변환 + 낙상 추론** · 알림 · MLOps | [backend](WIFIGUARD-BACKEND/docs/WIFI-GUARD_레포명세_backend_v1.0_20260804.md) | **서비스 API `/api/v1` + `/ws/live` + 인제스트(MQTT→Kafka→TimescaleDB→캐시) 구현 완료(2026-09-10)** · 계약 5종 · `pytest` 77 · AWS EC2 2대 기동 중(Kafka·MQTT 인스턴스는 M4) · **낙상 추론·알림 미구현** | ~112MB |
+| [WIFIGUARD-FRONTEND/](WIFIGUARD-FRONTEND/) | 웹 관제 대시보드 — 클라우드 실데이터 | [frontend](WIFIGUARD-FRONTEND/docs/WIFI-GUARD_레포명세_frontend_v1.0_20260804.md) | **전 라우트 실 API + `/ws/live` 실시간 재실 연결 완료(2026-09-10)** · Vitest 34 · HOME·FACILITY 모두 동작 · 낙상 축은 추론(M5) 대기라 "감지 미동작" | ~3MB |
 | [WIFIGUARD-ESP/](WIFIGUARD-ESP/) | 펌웨어 — ESP32-C5 송수신기 | [esp](WIFIGUARD-RASPBERRY/docs/WIFI-GUARD_레포명세_esp_v1.0_20260804.md) | `csi_fall/esp32c5/` 원본 복사 · build/venv/stride CSV **정리 완료(1.6GB → 23MB, 2026-09-08)** · `git init`은 원본 미커밋 변경 정리(REVIEW P7) 후 | ~23MB |
 
 각 폴더의 `PORTING.md`가 **원본 → 목표 매핑 · 남은 작업 · 미결정 사항**을 담고 있다. `README.md`는 그 레포의 책임 경계와 실행법이다.
@@ -36,29 +50,52 @@
 
 ---
 
-## 공통 계약 — SSOT는 backend 명세 §7
+## 공통 계약 — SSOT는 `WIFIGUARD-BACKEND/packages/contracts/`
 
-4개 레포가 공유하는 유일한 코드 자산은 `WIFIGUARD-BACKEND/packages/contracts/` (Pydantic v2)가 될 예정이다. **아직 비어 있다.** 이것이 Phase 0이고, 이게 있어야 4개 레포의 병렬 개발이 가능하다.
+4개 레포가 공유하는 유일한 코드 자산이다 (Pydantic v2). **2026-09-10 작성 완료.**
+
+| 모듈 | 내용 | 케이스 |
+|---|---|---|
+| `api.py` | REST 요청·응답 → `openapi.json` → 프론트 코드젠 | camelCase |
+| `mqtt.py` | `PresenceMsg` · `SignalMsg` · `TelemetryMsg` · `CmdMsg` · `AckMsg` | snake_case |
+| `kafka.py` | `FeatureRecord` · `StatusRecord` · `InferenceResult` | snake_case |
+| `realtime.py` | `/ws/live` 프레임 → `GET /realtime/schema` → 프론트 코드젠 | snake_case |
+| `topics.py` | MQTT·Kafka 토픽 조립·파싱 | — |
+
+`api.py`만 camelCase인 이유: REST는 프론트가 쓰던 이름을 유지해야 하고, 나머지는 엣지 dataclass
+`PresenceStatus` = DB 컬럼 `presence_samples` 이름을 **전 구간에서 한 번도 바꾸지 않기** 위해서다.
+`packages/contracts/tests/test_contract_parity.py`가 이 일치를 강제한다.
 
 ### MQTT 토픽 (구 `csiguard/` → `wifiguard/`)
 
 | 토픽 | 방향 | QoS | 주기 | 페이로드 |
 |---|---|---|---|---|
-| `wifiguard/{facility}/{device}/presence` | Pi→ | 1 | 4Hz | `PresenceMsg` (11개 스칼라) |
-| `wifiguard/{facility}/{device}/telemetry` | Pi→ | 1 | ~5s | `TelemetryMsg` |
-| `wifiguard/{facility}/{device}/window` | Pi→ | 0 | **게이팅 시에만** 4Hz | `WindowMsg` (S3 + ACF, 양자화+zstd+MessagePack) |
-| `wifiguard/{facility}/{device}/cmd` | →Pi | 1 | 이벤트 | `calibrate` / `set_config` / `set_mode` / `ping` |
-| `wifiguard/{facility}/{device}/ack` | Pi→ | 1 | 이벤트 | 커맨드 결과, 캘리브레이션 페이즈 |
+| `wifiguard/{tenant}/{device}/presence` | Pi→ | 1 | 4Hz | `PresenceMsg` (11개 스칼라) |
+| `wifiguard/{tenant}/{device}/telemetry` | Pi→ | 1 | ~1s | `TelemetryMsg` (링크·루프·게이트) |
+| `wifiguard/{tenant}/{device}/signal` | Pi→ | 0 | **게이팅 시에만** 4Hz | `SignalMsg` (1-D 대표신호 약 2KB, float32 무손실) |
+| `wifiguard/{tenant}/{device}/cmd` | →Pi | 1 | 이벤트 | `calibrate` / `set_config` / `set_mode` / `ping` |
+| `wifiguard/{tenant}/{device}/ack` | Pi→ | 1 | 이벤트 | 커맨드 결과, 캘리브레이션 페이즈 |
 
-HOME 계정은 `{facility}` 자리에 `home-{userId}`. mTLS 기기별 인증서, 아웃바운드 8883만.
+`{tenant}`는 FACILITY면 시설 UUID, HOME이면 `home-{userId}`. 아웃바운드 8883만.
+
+> **`window` leaf는 폐기됐다(2026-09-10).** Pi가 S3(224,224)+PCA-ACF(1,128,64) 텐서 **233KB**를
+> 올리는 설계는 4Hz 기준 7.5Mbps/기기라 성립하지 않았고, Pi 벤치 p90 489ms로 250ms 예산도
+> 넘겼다. 이제 Pi는 `select_pc_signal()`의 **1-D 합성 대표신호**(약 2KB, 117배 감소)까지만
+> 만들고, CWT 스칼로그램·ACF 변환은 클라우드 모델서버가 한다. 신호를 양자화하지 않는 이유는
+> `mqtt.SignalMsg` docstring 참조 — q-metric이 바뀌어 디노이즈 강도가 달라진다.
 
 ### Kafka
 
-`csi-feature-stream` (presence + window + 메타) · `csi-telemetry` · `csi-inference-result` (`{proba_fall, state, threshold, ts}`)
+`csi-feature-stream` (presence + signal, 파티션 키 = device_id) · `csi-telemetry` (telemetry + ack) ·
+`csi-inference-result` (`InferenceResult`: `proba_fall` · `threshold` · `postprocess` · 지연 계측)
 
-### `/ws/live` (10Hz)
+모델서버는 확률까지만 낸다. 상태 판정과 `fall_events` 생성은 백엔드 서비스 영역이다.
 
-재실 필드는 엣지 연결 시 **항상**, 낙상 필드는 모델 로드 시에만. **낙상 필드의 부재는 "낙상 없음"이 아니라 "낙상 감지가 동작하지 않음"이다** — 안전 요구.
+### `/ws/live`
+
+`{link, presence, fall}` **중첩** 구조다(구 평탄 dict에서 변경 — 재실의 `mv_threshold`와 낙상의
+`threshold`가 충돌해 `presence_*` 접두가 필요했던 문제를 구조로 없앴다).
+**`fall`이 없으면 "낙상 없음"이 아니라 "낙상 감지가 동작하지 않음"이다** — 안전 요구. `presence`도 같다.
 
 ### 세 축의 임계값 — 절대 섞지 말 것
 

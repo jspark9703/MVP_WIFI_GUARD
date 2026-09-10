@@ -12,10 +12,20 @@ mock-store.ts (1,195줄)                  TanStack Query 훅
 backend.ts → 127.0.0.1:8000 하드코딩      → 환경변수 (클라우드 API)
 ```
 
-> ## 현재 상태: 원본 프론트엔드 전체 복사 완료. 그대로 빌드·실행된다.
+> ## 현재 상태 (2026-09-10)
 >
-> `src/`는 원본 `Guardian Angel Alert/src/`와 **바이트 단위로 동일**하다 (`src/api/` 빈 디렉토리만 추가).
-> 아직 아무것도 바꾸지 않았다 — `BACKEND_URL` 하드코딩도, 목업 최상위 실행도 그대로다.
+> **실시간 재실이 화면까지 흐른다.** `src/api/realtime/`이 `/ws/live`에 붙어 기기별 재실
+> 상태와 MV 시계열을 받는다. HOME·FACILITY 구분 없이 동작하며, 소켓은 앱 전역에서 하나다.
+> `tsc` 0오류 · `eslint` 0오류 · **Vitest 34개** · `bun run build` 성공.
+>
+> **완료**: 12개 라우트 실 API + JWT 세션 복원 + 401 재시도 · 실시간 구독(지수 백오프,
+> 토큰 만료 시 refresh 후 즉시 재연결, 깨진 프레임 방어) · 낙상 알람 경로 · 링크 진단 패널.
+>
+> **미완**: 낙상 축은 백엔드 추론(M5)이 붙어야 값이 온다 — 그때까지 `fall`은 항상 null이고
+> 화면은 "낙상 감지 미동작"을 표시한다. **그것이 "이상 없음"이 아니라는 점이 이 화면의 계약이다.**
+> 캘리브레이션 61초는 아직 `src/lib/calibration-sim.ts`의 클라이언트 시뮬레이션이다
+> (엣지가 `calibrate` 명령을 아직 처리하지 않는다 — 등록된 것은 `ping`뿐).
+>
 > 무엇을 바꿔야 하는지는 [PORTING.md](PORTING.md)를 볼 것.
 
 ---
@@ -38,38 +48,70 @@ backend.ts → 127.0.0.1:8000 하드코딩      → 환경변수 (클라우드 A
 
 ```bash
 bun install
-cp .env.example .env      # 아직 읽는 코드는 없다 — Phase 0에서 backend.ts 가 읽게 만든다
-bun run dev
+cp .env.example .env      # VITE_API_BASE_URL 을 백엔드 주소로. 없으면 http://127.0.0.1:8000
+bun run dev               # http://localhost:8080
 ```
 
-| 명령                          |                      |
-| ----------------------------- | -------------------- |
-| `bun run dev`                 | vite 개발 서버       |
-| `bun run build` / `build:dev` | 프로덕션 / 개발 빌드 |
-| `bun run preview`             | 빌드 결과 미리보기   |
-| `bun run lint` / `format`     | eslint / prettier    |
+백엔드는 로컬(`make api`) 또는 EC2(SSH 터널 `-L 8000:127.0.0.1:8000`) 중 하나여야 한다.
+둘은 같은 8000 포트를 쓰므로 동시에 띄우지 않는다.
 
-테스트 러너는 없다. 도입(Vitest + Playwright)은 별도 합의 사항.
+| 명령                          |                              |
+| ----------------------------- | ---------------------------- |
+| `bun run dev`                 | vite 개발 서버 (8080)        |
+| `bun run build` / `build:dev` | 프로덕션 / 개발 빌드         |
+| `bun run preview`             | 빌드 결과 미리보기           |
+| `bun run typecheck`           | `tsc --noEmit`               |
+| `bun run test`                | Vitest (13개)                |
+| `bun run lint` / `format`     | eslint / prettier            |
+| `bun run api:types`           | 백엔드 openapi.json → 타입 생성 |
+
+Playwright(E2E)는 아직 없다 — 도입은 별도 합의 사항.
 
 ## 구조
 
 ```
 src/
-  routes/            파일기반 라우팅 13개 (구조 무변경)           routeTree.gen.ts 는 자동생성 — 손대지 말 것
-  components/        AuthGate · AppSidebar · FallAlarmModal · BackendDetectionBridge · EventLogPanel
+  routes/            파일기반 라우팅 13개 — 전부 실 API   routeTree.gen.ts 는 자동생성 — 손대지 말 것
+  components/        AuthGate · AppSidebar · FallAlarmModal · EventLogPanel
+    LiveBridge.tsx       소켓을 앱 전역에서 유지 + 낙상 전이 → 알람
+    LinkStatusPanel.tsx  기기 링크 진단 (수신률·RSSI·체크섬 오류)
   components/ui/     shadcn/radix 프리미티브 50개
+  api/               ★ 데이터 계층                                       [동작]
+    client.ts        apiFetch · /api/v1 자동 접두 · 401 재시도
+    auth.ts          authStore · useAuth
+    queries/ mutations/   조회 10종 · 변경 17종 (빌드 상수로 실API/목업 선택)
+    mock/            VITE_USE_MOCK=1 에서만 번들에 남는다
+    generated/       openapi.json → 타입 (수정 금지, `bun run api:types`)
+    realtime/        ★ 실시간                                            [동작]
+      types.ts         프레임 타입 + **런타임 파서**(신뢰할 수 없는 입력 방어)
+      socket.ts        연결 하나 · 지수 백오프 · 토큰 만료 시 즉시 재연결
+      useLiveStream.ts useLive · useLiveDevice · useMvSeries · useDetectionState
   lib/
-    mock-store.ts    ★ 전 화면 상태 소유 (1,195줄) — 개발용 폴백으로 격리 예정
-    backend.ts       ★ 로컬 백엔드 계약 (572줄) — src/api/ 로 분해 예정
+    domain.ts format.ts   도메인 타입 · 라벨("감지 미동작")
+    mock-store.ts    목업 시뮬레이션 (1,140줄)      [VITE_USE_MOCK=1 전용]
+    calibration-sim.ts   61.2초 데모 타이머 — 결과값이 난수다 (엣지 cmd 미구현)
     error-*.ts       SSR 오류 처리 — 건드리지 말 것
-  api/               ★ 신규 데이터 계층 자리 (비어 있음)
-    generated/       OpenAPI 코드젠 산출물 (수정 금지)
-    queries/         useDevices, useResidents, useFalls, useEventLogs, useRecipients …
-    mutations/       upsertDevice, upsertResident, updateResponse …
-    realtime/        socket.ts (재연결·백오프) · useLiveStream.ts (기기별 구독)
 docs/                명세 문서
 .env.example         VITE_API_BASE_URL · VITE_WS_URL · VITE_USE_MOCK
 ```
+
+## 실시간 계약
+
+`/ws/live` 프레임은 **snake_case** 다. REST(`generated/openapi.ts`)가 camelCase 인 것과 다르며,
+재실 필드 이름이 엣지 dataclass → MQTT → DB 컬럼 → WS 까지 한 번도 바뀌지 않게 하려는 것이다.
+
+타입의 진실원은 백엔드가 생성하는 `packages/contracts/realtime.schema.json`
+(= `GET /realtime/schema`)이고, `src/api/__tests__/realtime-contract.test.ts` 가 그 파일과
+직접 대조해 드리프트를 잡는다. 구 `src/lib/backend.ts` 의 `LiveSample` 은 손으로 미러링한
+탓에 서버 계약과 조용히 갈라져 있었다.
+
+```
+클라이언트 → 서버   auth(첫 프레임, 5초 안) → subscribe / unsubscribe / ping
+서버 → 클라이언트   hello → live* → pong / error
+```
+
+**`presence`/`fall` 이 null 이면 그 축이 동작하지 않는 것이다.** "이상 없음"이 아니다.
+`Device.online` 도 3상태다 — null 은 "모름"(텔레메트리를 받은 적 없음), false 는 "연결 끊김".
 
 ---
 

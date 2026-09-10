@@ -24,12 +24,27 @@ MQTT로 들어온 엣지 데이터를 Kafka로 흘려 **저장·추론·드리�
                                                        model_retrain_dag
 ```
 
-> ## ⚠ 현재 상태: 골격 + 이식 원본 배치만 완료. 실행되지 않는다.
+> ## 현재 상태 (2026-09-10)
 >
-> 미들웨어 compose 뼈대와 이식 원본은 자리를 잡았다. **애플리케이션 코드는 없다.**
-> 이식본(`services/api/main.py`, `services/inference/state_machine.py`)은 엣지로 넘어간
-> 모듈을 import하므로 **지금 상태로는 import되지 않는다** — 의도된 것이다.
-> 무엇이 남았는지는 [PORTING.md](PORTING.md) §2를 볼 것.
+> **재실 경로가 관통한다.** 엣지 MQTT → 브리지 → Kafka → 인제스트 → TimescaleDB · 최신값 캐시
+> → REST(`ResidentOut` 런타임 필드) · WebSocket(`/ws/live`)까지 실측 검증했다.
+> 30초 재생에서 브리지 248건 전달·거부 0, `presence_samples` 118행 적재, 오류 0.
+>
+> **동작한다**: 서비스 API `/api/v1` 27경로 + `/ws/live` + JWT + 테넌시,
+> PostgreSQL(Alembic `0001`, 테이블 11개) + TimescaleDB(`presence_samples`),
+> 계약 5종(`packages/contracts/`), pytest **77개**.
+> AWS EC2 2대(db·api) 배포 — [deploy/aws/README.md](deploy/aws/README.md).
+> **AWS 에는 아직 Kafka·MQTT 인스턴스가 없다**(M4). 설정이 없으면 인제스트는 꺼진 채로 뜨고
+> CRUD 는 정상 동작한다.
+>
+> **아직 없다**: 낙상 경로 — 모델서버 consumer/handler, `fall_events` `source="EDGE"`,
+> 알림 발송(`POST /recipients/{id}/test` 는 501). `services/{drift,provisioning}` 은 비어 있다.
+>
+> **실행 대상이 아닌 파일**: `services/api/.../main.py`는 구 로컬 백엔드의 REST 19종 + `/ws/live`
+> 계약 원본으로 보존한 것이며, 엣지로 넘어간 모듈을 import하므로 import 자체가 불가능하다.
+> `app.py`가 마운트하지 않는다. `services/inference/state_machine.py`도 같은 이유로 import 불가다.
+>
+> 남은 작업은 [PORTING.md](PORTING.md) §2, 계획은 `~/.claude/plans/rosy-wobbling-balloon.md`.
 
 ---
 
@@ -38,48 +53,106 @@ MQTT로 들어온 엣지 데이터를 Kafka로 흘려 **저장·추론·드리�
 | 하는 것 | 하지 않는 것 |
 |---|---|
 | MQTT 수신 → Kafka 라우팅 | CSI 수집·**재실감지** → 라즈베리파이 (네트워크와 무관하게 끊기지 않아야 함) |
-| 시계열·관계형 영속 저장 | **피처 추출 (S3/PCA-ACF)** → 라즈베리파이. 백엔드는 **완성된 텐서를 받는다** |
-| **낙상 DL 추론 서빙** — 피처 → 확률 → 상태머신 | 펌웨어·하드웨어 제어 → ESP / Pi |
-| 서비스 API (REST + WS 팬아웃) · 인증 · 테넌시 | UI 렌더링 → 프론트엔드 |
-| 알림 라우팅 (**SMS + ntfy 병행**) + 에스컬레이션 | |
+| 시계열·관계형 영속 저장 | **서브캐리어 선택·PCA 합성** → 라즈베리파이. 백엔드는 **1-D 대표신호를 받는다** |
+| **S3 스칼로그램 + PCA-ACF 변환** — 대표신호 → 텐서 | 펌웨어·하드웨어 제어 → ESP / Pi |
+| **낙상 DL 추론 서빙** — 텐서 → 확률 | UI 렌더링 → 프론트엔드 |
+| 낙상 상태 판정 · `fall_events` 생성 · 알림 라우팅 | |
+| 서비스 API (REST + WS 팬아웃) · 인증 · 테넌시 | |
 | 드리프트 감지 · 재학습 오케스트레이션 · 모델 레지스트리 | |
+
+> **경계가 2026-09-10에 바뀌었다.** 이전 설계는 Pi가 S3(224,224)+PCA-ACF(1,128,64) 텐서
+> **233KB**를 만들어 올리는 것이었으나, 4Hz 기준 7.5Mbps/기기라 업링크로 성립하지 않았고
+> Pi 벤치 p90이 489ms로 250ms 스트라이드 예산도 넘겼다. 이제 절단점은
+> `select_pc_signal()`이며 Pi는 약 2KB만 올린다(117배 감소). CWT 변환 비용이 클라우드로
+> 옮겨왔으므로 **처리량이 이 서비스의 제약**이 된다 — 계획서 R1 참조.
 
 ---
 
 ## 구조
 
 ```
-compose/            docker-compose.dev.yml (미들웨어) · obs.yml (관측) · .env.example   [뼈대 · 미검증]
-infra/              미들웨어 설정 (코드 아님) — 전부 비어 있다
+deploy/aws/         EC2 부팅 스크립트 · SSM · systemd — 1차 클라우드 토폴로지  [db·api 기동됨]
+compose/            docker-compose.dev.yml (미들웨어) · obs.yml (관측)         [뼈대 · 미검증]
+infra/              미들웨어 설정 (코드 아님) — 전부 비어 있다. compose 재개 시 작성
 services/
-  api/              FastAPI 서비스 계층    ← backend/main.py 이식 (REST 19종 계약 원본)
-  inference/        Consumer 2            ← backend/detector.py 이식 (상태머신)
-  model-serving/    모델 서빙             ← backend/inference/{engine,model}.py 이식
-  notification/     알림                  ← backend/notifier.py → adapters/ntfy.py 이식
-  ingest/ drift/ provisioning/ mqtt-bridge/                                    [비어 있음]
+  api/              FastAPI 서비스 계층 — app.py · routers/ 9종 · auth/        [동작]
+    .../realtime/   /ws/live 팬아웃 + GET /realtime/schema                     [동작]
+    .../main.py     구 로컬 백엔드 REST 19종 + /ws/live 계약 원본       [참조 전용 · import 불가]
+  ingest/           MQTT→Kafka 브리지 · 컨슈머 · 최신값 캐시 · WS 허브          [동작]
+                    라이브러리다 — 실행 주체는 api 의 lifespan (워커 1 고정)
+  model-serving/    DualBranchResNet 로더·추론 엔진                    [엔진만 · 컨슈머 없음]
+  inference/        낙상 상태머신 (0.468 · mode5 · 쿨다운 10s)          [import 불가 · 축소 예정]
+  notification/     adapters/ntfy.py (스레드+큐+백오프)                 [호출자 없음]
+  mqtt-bridge/      → ingest 로 통합됨 (README 참조)
+  drift/ provisioning/                                                         [비어 있음]
 dags/               model_retrain_dag                                          [비어 있음]
 packages/
-  contracts/        ★ MQTT·Kafka·API 스키마 SSOT — 여기가 먼저다                [비어 있음]
-  db/               SQLAlchemy 2.x + Alembic                                   [비어 있음]
-tools/              infer_validation.py (mode5 참조)
+  contracts/        ★ 4레포 스키마 SSOT                                        [동작]
+    api.py          REST (camelCase) → openapi.json → 프론트 코드젠
+    mqtt.py         presence · signal · telemetry · cmd · ack (snake_case)
+    kafka.py        FeatureRecord · StatusRecord · InferenceResult
+    realtime.py     /ws/live 프레임
+    topics.py       MQTT·Kafka 토픽 조립·파싱
+  db/               SQLAlchemy 2 모델 11개 + Alembic 0001                      [동작]
+tools/              seed.py · export_openapi.py · smoke.sh · infer_validation.py
 docs/               명세 문서
 _reference/         Window3BestModelInference (109MB) · dwt_analysis · collector-stride
 ```
 
-## 기동 — 서비스 API (HOME/FACILITY CRUD + JWT, 2026-09-08 구현)
+## 기동 — 서비스 API (CRUD only)
 
 ```bash
-uv sync                                  # uv workspace → 루트 .venv (packages/db · packages/contracts · services/api)
-docker start wg-pg                       # 로컬 PostgreSQL 16 (개발 PC 드라이런 컨테이너, 5432, wifiguard/devpass)
-make migrate                             # alembic upgrade head  (DATABASE_URL, 기본 로컬)
-make seed                                # 목업 시드 재현 (root@demo.io / member@demo.io / home@demo.io · 비밀번호 demo)
-make api                                 # http://127.0.0.1:8000/docs  (/api/v1)
-make test                                # pytest 32개 (wifiguard_test DB 자동 생성)
-make openapi                             # packages/contracts/openapi.json → 프론트 bun run api:types
+uv sync                                  # uv workspace → 루트 .venv
+docker start wg-pg                       # 로컬 PostgreSQL 16 (5432, wifiguard/devpass)
+make migrate                             # alembic upgrade head
+make seed                                # 목업 시드 (root@demo.io / member@demo.io / home@demo.io · 비밀번호 demo)
+make api                                 # http://127.0.0.1:8000/docs
+make test                                # pytest 77개 (wifiguard_test DB 자동 생성)
+make openapi                             # openapi.json + realtime.schema.json → 프론트 코드젠 입력
 bash tools/smoke.sh                      # curl 스모크
 ```
 
-구조: `packages/db`(SQLAlchemy 2 모델 + Alembic `0001_initial`, 테이블 11개) · `packages/contracts/api.py`(Pydantic camelCase 스키마 = OpenAPI SSOT) · `services/api/src/wifiguard_api/{app.py, deps.py(Scope·스코핑), auth/, routers/}`. 설계·결과는 `../REVIEW_20260907.md` §9 참조.
+## 기동 — 실시간 경로까지 (재실 엔드투엔드)
+
+인제스트는 **환경변수가 있을 때만** 켜진다. 없으면 조용히 꺼진 채로 뜨고 CRUD 는 정상이다.
+
+```bash
+docker start wg-pg wg-ts wg-kafka wg-mosq       # postgres · timescale · kafka · mosquitto
+
+export DATABASE_URL="postgresql+psycopg://wifiguard:devpass@127.0.0.1:5432/wifiguard"
+export TSDB_DSN="postgresql://wifiguard:devpass@127.0.0.1:5433/wifiguard_ts"
+export MQTT_HOST=127.0.0.1 MQTT_PORT=1883 MQTT_TLS=0
+export KAFKA_BOOTSTRAP=127.0.0.1:9092
+export JWT_SECRET="개발용-32바이트-이상-비밀값"
+
+uv run uvicorn wifiguard_api.app:app --port 8000 --workers 1   # ★ 워커 1 (아래 참조)
+curl -s localhost:8000/health | jq .ingest                     # 브리지·컨슈머·싱크 실측 상태
+```
+
+기기를 하나 등록해 그 `mqttTopic` 의 tenant/device 를 엣지 `config/device.toml` 에 넣고
+`python -m wifiguard_edge --transport replay` 를 돌리면 재실이 화면까지 흐른다.
+
+> **워커는 1개여야 한다.** `wifiguard_ingest` 는 라이브러리이고 실행 주체가 이 앱의
+> lifespan 이다. Kafka 컨슈머와 최신값 캐시가 **이 프로세스의 인메모리 상태**라, 워커를
+> 늘리면 각자 별도 컨슈머 그룹 멤버가 되어 메시지가 분산되고 캐시가 쪼개진다.
+> 늘리려면 먼저 Redis pub/sub 을 도입해야 한다.
+
+### 실시간 데이터가 흐르는 길
+
+```
+엣지 MQTT ──► mqtt_bridge ──► Kafka ──► consumers ──┬─► presence_sink ─► presence_samples (TSDB)
+ (presence 4Hz                (토픽 검증)            ├─► telemetry_sink ─► devices.online
+  signal 4Hz                                        └─► LiveCache ─┬─► REST ResidentOut 런타임 필드
+  telemetry 1Hz)                                                   └─► LiveHub ─► /ws/live
+```
+
+브리지는 **페이로드의 신원 주장을 믿지 않는다** — 토픽에서 파싱한 `device_id`/`tenant_id` 가
+정본이고, 페이로드가 다르게 주장하면 버린다. 그러지 않으면 자격증명이 샌 기기 하나가
+다른 테넌트의 재실 이력을 위조할 수 있다.
+
+구조: `packages/db`(모델 11개 + Alembic) · `packages/contracts`(계약 5종) ·
+`services/api/{app.py, deps.py, auth/, routers/, realtime/}` · `services/ingest`(브리지·컨슈머·캐시·허브).
+설계·결과는 `../REVIEW_20260907.md` §9 와 계획서 참조.
 
 ## 기동 — 미들웨어 compose (뼈대, 미검증)
 

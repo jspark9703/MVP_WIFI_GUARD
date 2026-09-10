@@ -152,7 +152,16 @@ class DeviceOut(ApiModel):
     serial_port: str | None = None
     mac: str | None = None
     fw: str | None = None
-    online: bool
+    online: bool | None = None
+    """None = **모름**(텔레메트리를 한 번도 받은 적 없음), False = 연결 끊김.
+
+    구 계약은 필수 bool 이라 "모름"을 표현할 수 없었고, 그래서 등록만 하고 아직 연결된 적
+    없는 기기가 화면에 "연결 끊김"으로 **단정** 표시됐다. `ResidentOut` 의 런타임 필드는
+    이미 nullable 이라 "감지 미동작"으로 올바르게 구분되는데, 기기 축만 그러지 못했다.
+
+    DB 컬럼(`devices.online`)은 NOT NULL 그대로다 — 마이그레이션이 필요 없고, 응답에서만
+    "텔레메트리를 받은 적 있는가"를 반영해 None 으로 낮춘다.
+    """
     last_seen_at: datetime | None = None
     base_rssi: float | None = None
     current_rssi: float | None = None

@@ -108,7 +108,14 @@ def compute_band_energy_welch(
     band_mask = (freqs >= low_hz) & (freqs <= high_hz)
     if not np.any(band_mask):
         return 0.0
-    return float(np.trapz(psd[band_mask], freqs[band_mask]))
+    return float(_trapezoid(psd[band_mask], freqs[band_mask]))
+
+
+#: numpy 2.0 이 `np.trapz` 를 제거하고 `np.trapezoid` 로 이름을 바꿨다.
+#: requirements-pi.txt 가 numpy 1.26 을 핀하고 개발 PC 는 2.x 라 양쪽을 지원해야 한다.
+#: 같은 결함이 ESP 사본에서는 REVIEW P13 으로 고쳐졌는데 이 사본은 누락돼 있었다 —
+#: `__main__.py` 가 없어 재실 루프가 한 번도 돌지 않았기 때문에 드러나지 않았다.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz  # type: ignore[attr-defined]
 
 
 def compute_final_signal(

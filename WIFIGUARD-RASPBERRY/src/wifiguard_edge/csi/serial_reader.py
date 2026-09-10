@@ -1,7 +1,7 @@
 """수신기(csi_recv) 시리얼 연결 관리.
 
 - 포트 자동 탐지 (OS 무관 — pyserial list_ports, 알려진 수신기 시리얼 우선)
-- 921600 baud 연결, 끊김 감지, 1초 간격 자동 재연결
+- 2 Mbaud 연결, 끊김 감지, 1초 간격 자동 재연결
 - 읽은 바이트를 FrameParser 에 넣고, 송신기 MAC 프레임만 RingBuffer 에 적재
 """
 
@@ -17,7 +17,15 @@ from serial.tools import list_ports
 from .buffer import RingBuffer
 from .protocol import FrameParser
 
-DEFAULT_BAUD = 921600
+#: 펌웨어 `csi_recv/sdkconfig.defaults` 의 CONFIG_ESP_CONSOLE_UART_BAUDRATE 와 **반드시 같아야 한다.**
+#: 어긋나면 프레임이 아예 파싱되지 않는다(매직 0xA55A 미검출 → resync 무한 반복).
+#:
+#: 921600 → 2000000 (2026-09-10). 근거: 프레임 660B(46+612+2) × 10bit = 6,600bit 이므로
+#: 921600 baud 의 상한은 약 140 fps 인데 실측 수신율이 약 167Hz 였다. 펌웨어 쪽 실측도
+#: 같은 결론이다 — `csi_recv_calibrate/optimization_plan.md` 가 UART TX 바이트 루프를
+#: 패킷당 ~7.16ms 로 측정했고, 167Hz 면 초당 1.2초로 이미 100%를 넘는다.
+#: 2 Mbaud 에서는 패킷당 ~3.3ms, 상한 약 303 fps 로 여유가 생긴다.
+DEFAULT_BAUD = 2_000_000
 CSI_SEND_MAC = "1a:00:00:00:00:00"  # csi_send 의 스푸핑 MAC (수신기도 필터하지만 이중 방어)
 
 
