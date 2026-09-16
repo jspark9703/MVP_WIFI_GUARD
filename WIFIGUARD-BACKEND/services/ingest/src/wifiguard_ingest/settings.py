@@ -48,6 +48,7 @@ class IngestSettings:
     #: 텔레메트리가 이만큼 끊기면 `Device.online=False`. 엣지 telemetry 는 1Hz(퇴실 5Hz)라
     #: 15초면 여유가 충분하면서도 화면이 너무 늦게 반응하지 않는다.
     offline_after_s: float
+    fall_cooldown_seconds: float
 
     @classmethod
     def from_env(cls) -> "IngestSettings":
@@ -64,6 +65,7 @@ class IngestSettings:
             presence_batch_size=_int("PRESENCE_BATCH_SIZE", 200),
             presence_flush_interval_s=_float("PRESENCE_FLUSH_INTERVAL_S", 1.0),
             offline_after_s=_float("DEVICE_OFFLINE_AFTER_S", 15.0),
+            fall_cooldown_seconds=_float("FALL_COOLDOWN_SECONDS", 10.0),
         )
 
     # ── 어느 갈래가 켜지는가 ────────────────────────────────────────

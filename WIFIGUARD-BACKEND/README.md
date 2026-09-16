@@ -37,12 +37,15 @@ MQTT로 들어온 엣지 데이터를 Kafka로 흘려 **저장·추론·드리�
 > **AWS 에는 아직 Kafka·MQTT 인스턴스가 없다**(M4). 설정이 없으면 인제스트는 꺼진 채로 뜨고
 > CRUD 는 정상 동작한다.
 >
-> **아직 없다**: 낙상 경로 — 모델서버 consumer/handler, `fall_events` `source="EDGE"`,
-> 알림 발송(`POST /recipients/{id}/test` 는 501). `services/{drift,provisioning}` 은 비어 있다.
+> **모델 실행 경로까지 구현됐다**: `services/csi-fall-pipeline`의 학습 체크포인트를
+> `services/inference`가 로드하고, Kafka `csi-feature-stream`의 1-D 대표신호를 학습과 동일한
+> ACF/CWT 피처로 변환해 `csi-inference-result`에 발행한다. 인제스트는 causal mode5 상태머신,
+> WebSocket 캐시, `fall_events(source="EDGE")` idempotent 저장, ntfy 알림 큐까지 연결한다.
+> 저장소에 없는 것은 실제 학습 가중치뿐이며, 인수 계약은 [docs/MODEL_HANDOFF.md](docs/MODEL_HANDOFF.md)다.
 >
 > **실행 대상이 아닌 파일**: `services/api/.../main.py`는 구 로컬 백엔드의 REST 19종 + `/ws/live`
 > 계약 원본으로 보존한 것이며, 엣지로 넘어간 모듈을 import하므로 import 자체가 불가능하다.
-> `app.py`가 마운트하지 않는다. `services/inference/state_machine.py`도 같은 이유로 import 불가다.
+> `app.py`가 마운트하지 않는다. 운영 추론 진입점은 `python -m wifiguard_inference`다.
 >
 > 남은 작업은 [PORTING.md](PORTING.md) §2, 계획은 `~/.claude/plans/rosy-wobbling-balloon.md`.
 
@@ -72,17 +75,18 @@ MQTT로 들어온 엣지 데이터를 Kafka로 흘려 **저장·추론·드리�
 
 ```
 deploy/aws/         EC2 부팅 스크립트 · SSM · systemd — 1차 클라우드 토폴로지  [db·api 기동됨]
-compose/            docker-compose.dev.yml (미들웨어) · obs.yml (관측)         [뼈대 · 미검증]
-infra/              미들웨어 설정 (코드 아님) — 전부 비어 있다. compose 재개 시 작성
+compose/            docker-compose.dev.yml (API·인제스트·선택 모델 포함) · obs.yml
+infra/              Mosquitto · PostgreSQL · TimescaleDB · 관측 설정
 services/
   api/              FastAPI 서비스 계층 — app.py · routers/ 9종 · auth/        [동작]
     .../realtime/   /ws/live 팬아웃 + GET /realtime/schema                     [동작]
     .../main.py     구 로컬 백엔드 REST 19종 + /ws/live 계약 원본       [참조 전용 · import 불가]
   ingest/           MQTT→Kafka 브리지 · 컨슈머 · 최신값 캐시 · WS 허브          [동작]
                     라이브러리다 — 실행 주체는 api 의 lifespan (워커 1 고정)
-  model-serving/    DualBranchResNet 로더·추론 엔진                    [엔진만 · 컨슈머 없음]
-  inference/        낙상 상태머신 (0.468 · mode5 · 쿨다운 10s)          [import 불가 · 축소 예정]
-  notification/     adapters/ntfy.py (스레드+큐+백오프)                 [호출자 없음]
+  model-serving/    구/신 체크포인트 호환 로더·추론 엔진                         [동작]
+  csi-fall-pipeline/ raw CSI→피처→학습→오프라인 예측 독립 패키지       [21 pass, 2 skip]
+  inference/        Kafka 신호→동일 피처→모델→InferenceResult                    [동작]
+  notification/     ntfy 비동기 큐·백오프; 확정 FALL 뒤 수신자별 호출             [동작]
   mqtt-bridge/      → ingest 로 통합됨 (README 참조)
   drift/ provisioning/                                                         [비어 있음]
 dags/               model_retrain_dag                                          [비어 있음]
@@ -132,6 +136,15 @@ curl -s localhost:8000/health | jq .ingest                     # 브리지·컨�
 기기를 하나 등록해 그 `mqttTopic` 의 tenant/device 를 엣지 `config/device.toml` 에 넣고
 `python -m wifiguard_edge --transport replay` 를 돌리면 재실이 화면까지 흐른다.
 
+통합 작업장 루트에서는 하드웨어 없이 실제 MQTT→Kafka 적재를 반복 검증할 수 있다.
+
+```powershell
+.\scripts\validate-mock-storage.ps1 -NetworkName wifiguard-dev_default
+```
+
+이 검증은 먼저 계약 메시지 3종을 직접 발행하고, 이어서 Raspberry 합성 replay를 구동한다.
+각 실행은 새 UUID를 사용하며 Kafka에서 해당 레코드를 다시 읽어 Pydantic 계약으로 검증한다.
+
 > **워커는 1개여야 한다.** `wifiguard_ingest` 는 라이브러리이고 실행 주체가 이 앱의
 > lifespan 이다. Kafka 컨슈머와 최신값 캐시가 **이 프로세스의 인메모리 상태**라, 워커를
 > 늘리면 각자 별도 컨슈머 그룹 멤버가 되어 메시지가 분산되고 캐시가 쪼개진다.
@@ -154,22 +167,29 @@ curl -s localhost:8000/health | jq .ingest                     # 브리지·컨�
 `services/api/{app.py, deps.py, auth/, routers/, realtime/}` · `services/ingest`(브리지·컨슈머·캐시·허브).
 설계·결과는 `../REVIEW_20260907.md` §9 와 계획서 참조.
 
-## 기동 — 미들웨어 compose (뼈대, 미검증)
+## 기동 — 로컬 E2E compose
 
 ```bash
 cp compose/.env.example compose/.env    # 비밀번호를 실제 값으로 채울 것
-make up                                  # 미들웨어 전 스택
+make up                                  # API·브로커·DB 전 스택(모델 제외)
+make model-up                            # weights/model.pt를 포함한 추론 E2E
 make obs                                 # + 관측 스택
 make ps / make logs / make down
 ```
 
-`make replay`는 대상 코드가 없어 실패한다.
+기존 `make replay` 대상은 없으며, 대신 루트 `scripts/validate-mock-storage.ps1`을 사용한다.
 
-**⚠ compose는 미검증이다.** `infra/mosquitto/mosquitto.conf`, `infra/timescaledb/init.sql`, `infra/prometheus/prometheus.yml` 등 마운트 대상 파일이 아직 없어 그대로 올리면 일부 컨테이너가 실패한다. 현재 1차 클라우드 토폴로지는 compose 를 쓰지 않는다(`deploy/aws/README.md`).
+compose 정적 해석(`docker compose ... config --quiet`)은 검증했다. 현재 작업 환경에서는 Docker
+Desktop 데몬이 꺼져 있어 컨테이너 기동 회귀는 수행하지 못했다. 가중치 인수 뒤에는
+`make model-check`, `make model-up`, `tools/validate_live_inference_kafka.py` 순서로 검증한다.
 
 ---
 
-## 모델 계약 (변경 금지)
+## 모델 계약
+
+운영 권장 체크포인트는 `csi-fall-pipeline` 형식이며, 현재 1-D 대표신호 와이어 계약에서는
+`feature=legacy_map`, `cwt=true`만 정확히 재현할 수 있다. 상세 인수 조건은
+[docs/MODEL_HANDOFF.md](docs/MODEL_HANDOFF.md)를 따른다. 아래 형식은 기존 체크포인트 호환 계약이다.
 
 ```
 입력 A: S3 스칼로그램   (224, 224)   float32

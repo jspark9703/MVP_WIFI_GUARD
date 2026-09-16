@@ -62,7 +62,9 @@ class FeatureLoop(threading.Thread):
         #: 재생·테스트에서 재실 루프 없이도 이 루프를 돌릴 수 있어야 한다.
         self._presence_state = presence_state or (lambda: None)
 
-        self._stop = threading.Event()
+        # threading.Thread.join() calls its private _stop() method.  Keep our
+        # event under a different name so a clean service shutdown can join.
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._tick_count = 0
         self._skip_count = 0
@@ -71,12 +73,12 @@ class FeatureLoop(threading.Thread):
         self._seq = 0
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def run(self) -> None:
         log.info("feature loop start: stride=%.2fs", self.stride_sec)
         next_tick = time.monotonic()
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             now = time.monotonic()
             if now < next_tick:
                 time.sleep(min(next_tick - now, 0.05))

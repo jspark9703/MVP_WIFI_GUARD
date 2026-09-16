@@ -7,6 +7,8 @@ managed_components/
 # ESP-IDF generated config — keep only sdkconfig.defaults (sdkconfig held Wi-Fi credentials in the original repo)
 sdkconfig
 sdkconfig.old
+sdkconfig.private.defaults
+build-*/
 
 # Python
 __pycache__/

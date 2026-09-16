@@ -6,8 +6,8 @@
 #   make up      /  docker compose -f compose/docker-compose.dev.yml up -d
 #   make down
 #
-# ⚠ 미검증. 애플리케이션 서비스(api/ingest/inference/...)는 코드가 아직 없으므로
-#   이 파일에는 **미들웨어만** 정의했다. 서비스는 구현되는 대로 추가한다.
+# 애플리케이션은 api(ingest 포함)와 inference 두 서비스다. inference는 실제 가중치가
+# 있어야 하므로 `--profile model`에서만 기동한다.
 
 name: wifiguard-dev
 
@@ -22,6 +22,11 @@ services:
       - ../infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ../infra/mosquitto/acl:/mosquitto/config/acl:ro
       - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-p", "1883", "-t", "$$SYS/broker/version", "-C", "1", "-W", "3"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
 
   # ── 스트림 ────────────────────────────────────────────────────────
   kafka:
@@ -33,13 +38,34 @@ services:
       KAFKA_CFG_NODE_ID: "0"
       KAFKA_CFG_PROCESS_ROLES: "controller,broker"
       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
-      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_LISTENERS: "INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "INTERNAL://kafka:29092,EXTERNAL://localhost:9092"
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "INTERNAL"
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"   # 토픽은 infra/kafka/ 정의로 명시 생성
     volumes:
       - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  kafka-init:
+    image: bitnami/kafka:3.9
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    command: >
+      bash -ec '
+      until /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list; do sleep 2; done;
+      for topic in csi-feature-stream csi-telemetry csi-inference-result; do
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092
+        --create --if-not-exists --topic $$topic --partitions 3 --replication-factor 1;
+      done'
 
   # ── 저장 ──────────────────────────────────────────────────────────
   # 이원화: 고빈도 시계열은 TimescaleDB, 관계형은 PostgreSQL (명세 §4 Phase 1-1)
@@ -54,6 +80,11 @@ services:
     volumes:
       - ../infra/timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - timescale-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   postgres:
     image: postgres:16
@@ -66,6 +97,11 @@ services:
     volumes:
       - ../infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   # ── WebSocket 팬아웃 (다수 클라이언트 × 다수 기기) ─────────────────
   redis:
@@ -106,6 +142,53 @@ services:
     depends_on:
       - postgres
       - minio
+
+  api:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${PG_USER:-wifiguard}:${PG_PASSWORD}@postgres:5432/${PG_NAME:-wifiguard}"
+      TSDB_DSN: "postgresql://${TSDB_USER:-wifiguard}:${TSDB_PASSWORD}@timescaledb:5432/${TSDB_NAME:-wifiguard_ts}"
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TLS: "0"
+      KAFKA_BOOTSTRAP: "kafka:29092"
+      JWT_SECRET: "${JWT_SECRET:?set in .env}"
+      ALLOW_FALL_SIMULATE: "${ALLOW_FALL_SIMULATE:-0}"
+    command: >
+      sh -ec 'alembic -c /app/packages/db/alembic.ini upgrade head &&
+      uvicorn wifiguard_api.app:app --host 0.0.0.0 --port 8000 --workers 1'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "on-failure:5"
+
+  inference:
+    profiles: ["model"]
+    build:
+      context: ../..
+      dockerfile: WIFIGUARD-BACKEND/services/inference/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:29092"
+      KAFKA_INFERENCE_GROUP: "wifiguard-inference-v1"
+      MODEL_CHECKPOINT: /models/model.pt
+      MODEL_DEVICE: "${MODEL_DEVICE:-cpu}"
+      MODEL_THRESHOLD: "${MODEL_THRESHOLD:-}"
+    volumes:
+      - "${MODEL_CHECKPOINT_HOST:-../weights/model.pt}:/models/model.pt:ro"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "on-failure:5"
 
 volumes:
   mosquitto-data:

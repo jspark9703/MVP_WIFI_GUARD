@@ -90,15 +90,20 @@ class MqttConfig:
 
 @dataclass
 class TransportConfig:
-    kind: str = "serial"  # serial | replay | spi(미구현)
+    kind: str = "serial"  # serial | replay | spi
     serial_port: str = ""
     baudrate: int = 2_000_000
     replay_source: str = "synthetic"
     replay_speed: float = 1.0
     spi_bus: int = 0
     spi_device: int = 0
-    max_speed_hz: int = 10_000_000
+    max_speed_hz: int = 6_000_000
     gpio_data_ready: int = 25
+    ready_gpio_chip: str = "/dev/gpiochip0"
+    ready_bias: str = "pull-down"
+    spi_batch_frames: int = 8
+    spi_transfer_api: str = "direct-ioctl"
+    spi_protocol_resync_seconds: float = 0.05
 
 
 @dataclass
@@ -123,6 +128,15 @@ class EdgeConfig:
             raise ConfigError(f"[transport] kind 는 serial|replay|spi 중 하나여야 한다: {self.transport.kind!r}")
         if self.transport.kind == "serial" and self.transport.baudrate <= 0:
             raise ConfigError("[transport] baudrate 가 양수가 아니다")
+        if self.transport.kind == "spi":
+            if not 1_000_000 <= self.transport.max_speed_hz <= 50_000_000:
+                raise ConfigError("[transport] max_speed_hz 는 1~50MHz 범위여야 한다")
+            if self.transport.spi_batch_frames not in (1, 2, 4, 8):
+                raise ConfigError("[transport] spi_batch_frames 는 1|2|4|8 중 하나여야 한다")
+            if self.transport.spi_transfer_api != "direct-ioctl":
+                raise ConfigError("[transport] 현재 지원하는 SPI API는 direct-ioctl뿐이다")
+            if self.transport.ready_bias not in ("as-is", "disabled", "pull-down", "pull-up"):
+                raise ConfigError("[transport] ready_bias 값이 올바르지 않다")
         if self.gating.signal_publish_hz <= 0:
             raise ConfigError("[gating] signal_publish_hz 가 양수가 아니다")
         for name in ("tenant_id", "device_id"):

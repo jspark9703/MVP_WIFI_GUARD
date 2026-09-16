@@ -9,8 +9,7 @@ compose/.env
 *.pem
 *.key
 
-# 모델 체크포인트 — 89MB. GitHub 100MB 한도에 근접한다.
-# 분리 시 Git LFS 또는 MLflow Registry + S3 로 옮길 것 (PORTING.md §4)
+# 운영 모델 체크포인트는 외부 artifact/secret으로 read-only 주입한다.
 *.pt
 *.onnx
 

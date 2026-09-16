@@ -21,16 +21,17 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-# services/model-serving 은 **의도적으로 제외**한다 — torch 2GB 가 루트 uv sync 와 CI 를
-# 무겁게 만든다. 그쪽은 `uv run --package wifiguard-serving` 으로 따로 다룬다 (M5).
-members = ["packages/db", "packages/contracts", "services/api", "services/ingest"]
+# model-serving/inference는 **의도적으로 제외**한다 — torch가 루트 uv sync와 CI를
+# 무겁게 만든다. 모델 경로는 `uv run --project services/inference ...`로 따로 다룬다.
+members = ["packages/db", "packages/contracts", "services/api", "services/ingest", "services/notification"]
 
 [tool.uv.sources]
 wifiguard-api = { workspace = true }
 wifiguard-db = { workspace = true }
 wifiguard-contracts = { workspace = true }
 wifiguard-ingest = { workspace = true }
+wifiguard-notify = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["packages/contracts/tests", "services/ingest/tests", "services/api/tests"]
+testpaths = ["packages/contracts/tests", "services/ingest/tests", "services/notification/tests", "services/api/tests"]
 addopts = "-q"

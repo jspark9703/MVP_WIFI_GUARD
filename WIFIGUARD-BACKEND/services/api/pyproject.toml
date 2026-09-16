@@ -1,7 +1,7 @@
 [project]
 name = "wifiguard-api"
 version = "0.1.0"
-description = "WIFI-GUARD 서비스 API — FastAPI (HOME/FACILITY CRUD + JWT 인증). 실시간·추론 경로는 후속 단계."
+description = "WIFI-GUARD service API with HOME/FACILITY CRUD, JWT, live ingest and fall state"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",

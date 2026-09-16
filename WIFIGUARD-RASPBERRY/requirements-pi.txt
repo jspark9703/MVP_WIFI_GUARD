@@ -1,6 +1,6 @@
-# 라즈베리파이 실기 전용. 개발 PC에서는 설치되지 않으며,
-# transport/spi_mock.py 가 spidev/RPi.GPIO 없이 같은 코드 경로를 돌린다.
+# 라즈베리파이 실기 전용. WGSP Batch8 수집은 libgpiod와 spidev를 사용한다.
+# CWT/모델 추론 의존성은 클라우드 소관이므로 Pi에 설치하지 않는다.
 -r requirements.txt
 
-spidev>=3.6
-RPi.GPIO>=0.7.1
+gpiod>=2.2.1
+spidev>=3.8

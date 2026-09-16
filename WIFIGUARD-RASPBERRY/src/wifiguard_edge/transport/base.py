@@ -72,10 +72,9 @@ class CsiSource(Protocol):
 def create_source(kind: TransportKind, buffer: RingBuffer, config: Any) -> CsiSource:
     """설정에 맞는 CsiSource 를 만든다. **import 는 여기서만 지연 수행된다.**
 
-    `spidev`/`RPi.GPIO` 는 개발 PC 에 없고 `pyserial` 은 Pi 최소 설치에 없을 수 있다.
-    모듈 최상단에서 import 하면 쓰지도 않는 백엔드 때문에 프로세스가 뜨지 않는다 —
-    실제로 `transport/spi_reader.py:6-7` 이 그 문제를 갖고 있어 개발 PC 에서
-    `import wifiguard_edge.transport.spi_reader` 자체가 실패한다.
+    `gpiod`/Linux `fcntl` 은 개발 PC 에 없을 수 있다. 모듈 최상단에서 하드웨어 전용
+    의존성을 import 하면 사용하지 않는 전송 경로 때문에 프로세스가 뜨지 않으므로,
+    선택된 구현만 여기서 지연 import 한다.
     """
     if kind == "serial":
         from ..csi.serial_reader import SerialReader
@@ -94,10 +93,7 @@ def create_source(kind: TransportKind, buffer: RingBuffer, config: Any) -> CsiSo
             speed=config.replay_speed,
         )
     if kind == "spi":
-        raise NotImplementedError(
-            "SPI 전송은 아직 쓸 수 없다. 짝이 되는 ESP 펌웨어에 spi_slave 구현이 없고, "
-            "transport/protocol.py 의 프레임 정의(CSI 128B/64서브캐리어)가 펌웨어가 실제로 "
-            "내보내는 612B/306서브캐리어를 담지 못한다. 두 축 모두 재작성이 필요하다 — "
-            "../WIFIGUARD-ESP/README.md 의 SPI 절 참조. 지금은 kind='serial' 을 쓸 것."
-        )
+        from .wgsp_source import WgspBatch8Source
+
+        return WgspBatch8Source(buffer=buffer, config=config)
     raise ValueError(f"알 수 없는 transport kind: {kind!r}")

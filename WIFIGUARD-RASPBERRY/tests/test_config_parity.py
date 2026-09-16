@@ -144,11 +144,12 @@ def test_int_is_coerced_to_float_field(cfg_dir):
     assert cfg.gating.signal_publish_hz == 2.0
 
 
-def test_spi_kind_passes_validation_but_factory_refuses(cfg_dir):
-    """설정으로는 쓸 수 있게 두되, 실제 생성에서 이유를 붙여 막는다."""
+def test_spi_kind_builds_wgsp_source_without_opening_hardware(cfg_dir):
+    """팩토리는 SPI 장치를 미리 열지 않고 WGSP 소스를 구성한다."""
     from wifiguard_edge.transport.base import create_source
+    from wifiguard_edge.transport.wgsp_source import WgspBatch8Source
 
     _write(cfg_dir, "device.toml", '[device]\ntenant_id="t"\ndevice_id="d"\n[transport]\nkind = "spi"\n')
     cfg = load_config(cfg_dir)
-    with pytest.raises(NotImplementedError, match="SPI"):
-        create_source("spi", buffer=None, config=cfg.transport)  # type: ignore[arg-type]
+    source = create_source("spi", buffer=None, config=cfg.transport)  # type: ignore[arg-type]
+    assert isinstance(source, WgspBatch8Source)

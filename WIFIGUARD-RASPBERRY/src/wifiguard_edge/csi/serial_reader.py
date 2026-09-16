@@ -68,12 +68,13 @@ class SerialReader(threading.Thread):
         self.port: str | None = None
         self.reconnects = 0
         self.mac_filtered = 0
-        self._stop = threading.Event()
+        # Do not shadow threading.Thread._stop(), which join() invokes.
+        self._stop_event = threading.Event()
         self._ser: serial.Serial | None = None
         self._ser_lock = threading.Lock()
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def status(self) -> dict:
         return {
@@ -129,7 +130,7 @@ class SerialReader(threading.Thread):
                 return False
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             port = self.fixed_port or discover_port(self.preferred_serial)
             if port is None:
                 self.connected = False
@@ -143,7 +144,7 @@ class SerialReader(threading.Thread):
                     self.connected = True
                     with self._ser_lock:
                         self._ser = ser
-                    while not self._stop.is_set():
+                    while not self._stop_event.is_set():
                         data = ser.read(8192)
                         if not data:
                             continue

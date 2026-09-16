@@ -9,67 +9,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TrainRouteImport } from './routes/train'
-import { Route as SignupRouteImport } from './routes/signup'
-import { Route as ResidentsRouteImport } from './routes/residents'
-import { Route as NotificationsRouteImport } from './routes/notifications'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as HistoryRouteImport } from './routes/history'
-import { Route as FacilityMembersRouteImport } from './routes/facility-members'
-import { Route as EventLogRouteImport } from './routes/event-log'
-import { Route as DevicesRouteImport } from './routes/devices'
-import { Route as ConfigRouteImport } from './routes/config'
-import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteImport } from './routes/account'
+import { Route as ConfigRouteImport } from './routes/config'
+import { Route as DevicesRouteImport } from './routes/devices'
+import { Route as EventLogRouteImport } from './routes/event-log'
+import { Route as FacilityMembersRouteImport } from './routes/facility-members'
+import { Route as HistoryRouteImport } from './routes/history'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as ResidentsRouteImport } from './routes/residents'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as TrainRouteImport } from './routes/train'
 
-const TrainRoute = TrainRouteImport.update({
-  id: '/train',
-  path: '/train',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResidentsRoute = ResidentsRouteImport.update({
-  id: '/residents',
-  path: '/residents',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NotificationsRoute = NotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HistoryRoute = HistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FacilityMembersRoute = FacilityMembersRouteImport.update({
-  id: '/facility-members',
-  path: '/facility-members',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EventLogRoute = EventLogRouteImport.update({
-  id: '/event-log',
-  path: '/event-log',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DevicesRoute = DevicesRouteImport.update({
-  id: '/devices',
-  path: '/devices',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConfigRoute = ConfigRouteImport.update({
-  id: '/config',
-  path: '/config',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountRoute = AccountRouteImport.update({
@@ -77,9 +32,54 @@ const AccountRoute = AccountRouteImport.update({
   path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ConfigRoute = ConfigRouteImport.update({
+  id: '/config',
+  path: '/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevicesRoute = DevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EventLogRoute = EventLogRouteImport.update({
+  id: '/event-log',
+  path: '/event-log',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FacilityMembersRoute = FacilityMembersRouteImport.update({
+  id: '/facility-members',
+  path: '/facility-members',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResidentsRoute = ResidentsRouteImport.update({
+  id: '/residents',
+  path: '/residents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrainRoute = TrainRouteImport.update({
+  id: '/train',
+  path: '/train',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -188,74 +188,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/train': {
-      id: '/train'
-      path: '/train'
-      fullPath: '/train'
-      preLoaderRoute: typeof TrainRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/residents': {
-      id: '/residents'
-      path: '/residents'
-      fullPath: '/residents'
-      preLoaderRoute: typeof ResidentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notifications': {
-      id: '/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof NotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/history': {
-      id: '/history'
-      path: '/history'
-      fullPath: '/history'
-      preLoaderRoute: typeof HistoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/facility-members': {
-      id: '/facility-members'
-      path: '/facility-members'
-      fullPath: '/facility-members'
-      preLoaderRoute: typeof FacilityMembersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/event-log': {
-      id: '/event-log'
-      path: '/event-log'
-      fullPath: '/event-log'
-      preLoaderRoute: typeof EventLogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/devices': {
-      id: '/devices'
-      path: '/devices'
-      fullPath: '/devices'
-      preLoaderRoute: typeof DevicesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/config': {
-      id: '/config'
-      path: '/config'
-      fullPath: '/config'
-      preLoaderRoute: typeof ConfigRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account': {
@@ -265,11 +202,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/config': {
+      id: '/config'
+      path: '/config'
+      fullPath: '/config'
+      preLoaderRoute: typeof ConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/devices': {
+      id: '/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof DevicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/event-log': {
+      id: '/event-log'
+      path: '/event-log'
+      fullPath: '/event-log'
+      preLoaderRoute: typeof EventLogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/facility-members': {
+      id: '/facility-members'
+      path: '/facility-members'
+      fullPath: '/facility-members'
+      preLoaderRoute: typeof FacilityMembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/residents': {
+      id: '/residents'
+      path: '/residents'
+      fullPath: '/residents'
+      preLoaderRoute: typeof ResidentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/train': {
+      id: '/train'
+      path: '/train'
+      fullPath: '/train'
+      preLoaderRoute: typeof TrainRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

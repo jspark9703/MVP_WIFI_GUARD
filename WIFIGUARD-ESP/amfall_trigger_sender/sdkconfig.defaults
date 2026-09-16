@@ -1,0 +1,12 @@
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_FREERTOS_HZ=1000
+
+CONFIG_WIFI_GUARD_TX_SSID="WIFI-GUARD-PAIR"
+CONFIG_WIFI_GUARD_TX_PASSWORD="change-me-amfall"
+CONFIG_WIFI_GUARD_TX_CHANNEL=48
+CONFIG_WIFI_GUARD_TX_TRIGGER_PORT=3333
+CONFIG_WIFI_GUARD_TX_RATE_HZ=320
+
+# Compile-only builds keep the conservative flash default. A reviewed hardware
+# overlay must set the detected 16 MB flash size and the real private PSK.

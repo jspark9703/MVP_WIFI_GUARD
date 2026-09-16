@@ -3,7 +3,7 @@
 CSI를 SPI로 받아 **재실을 판정하고**, 활동 구간의 **피처를 추출해 클라우드로 올린다.**
 
 ```
-[ESP32-C5 RX] ──SPI 8192B/50ms──► [Raspberry Pi]
+[ESP32-C5 RX] ──WGSP v1 Batch8 / SPI 6MHz──► [Raspberry Pi]
                                        │
                     ┌──────────────────┼──────────────────┐
                     ▼                  ▼                  ▼
@@ -17,14 +17,19 @@ CSI를 SPI로 받아 **재실을 판정하고**, 활동 구간의 **피처를 �
                       [AWS IoT Core] ──IoT Rule──► [Kafka]
 ```
 
-> ## 현재 상태 (2026-09-10): 프로세스로 뜨고, 브로커까지 발행한다.
+> ## 현재 상태 (2026-09-10): Batch8 SPI부터 브로커까지 실측 동작한다.
 >
 > `python -m wifiguard_edge` 로 기동한다. 수집 → 재실감지 → 게이팅 → 대표신호 → MQTT 발행이
 > 이어져 있고, 로컬 Mosquitto 로 실측 검증했다(presence 4Hz · signal 4Hz · telemetry 1Hz,
-> 오류 0). Pi·수신기 없이도 `--transport replay` 로 전 배선이 돈다. `pytest` **77개** 통과.
+> 오류 0). Pi·수신기 없이도 `--transport replay` 로 전 배선이 돈다. `pytest` **89개** 통과,
+> 하드웨어 선택 테스트 2개는 개발 PC에서 skip된다.
 >
-> **아직 없는 것**: 캘리브레이션 명령 처리(`cmd` 는 `ping` 만 등록됨 — 나머지는 error ack로
-> 답한다), 단절 구간 스풀(`spool/`), SPI 전송(짝 펌웨어 없음), 실기 검증.
+> 새 `transport="spi"` 경로는 8×576B WGSP 프레임을 한 번의 4608B Linux ioctl로 읽는다.
+> 30초 실기에서 19,268프레임, 320.014Hz, MQTT publication 168건, 전송 오류 0을 확인했고
+> Kafka offset 증가도 확인했다. 기존 UART와 replay 경로는 그대로 유지한다.
+>
+> **아직 없는 것**: SPI 제어 레코드가 없으므로 SPI 모드의 `train` 캘리브레이션 명령,
+> 단절 구간 스풀(`spool/`), 한 시간 soak 및 네트워크 장애 복구 증적.
 >
 > **업링크 경계가 2026-09-10에 바뀌었다.** 이 레포는 이제 **1-D 합성 대표신호**까지만 만든다.
 > S3 스칼로그램·PCA-ACF 변환은 클라우드 모델서버가 한다. 절단점은
@@ -61,13 +66,13 @@ src/wifiguard_edge/
   csi/             링버퍼 · UART 프레임 파서                     [이식 · 무변경]
   calibration/     4단계 61초 캘리브레이션            [이식 · cmd 연결은 미구현]
   transport/       base.py(Protocol) · replay_source.py          [M1]
-                   spi_reader.py — 짝 펌웨어 없어 사용 불가
+                   wgsp_protocol.py · wgsp_source.py — Batch8 SPI [실기 검증]
   mqtt/            codec · publisher(논블로킹 큐) · command      [M1]
   spool/           단절 버퍼                                     [비어 있음]
 config/            default.toml · device.toml.example
-deploy/            systemd unit · install.sh                     [뼈대 · 실기 미검증]
+  deploy/            systemd unit · install.sh                     [통합 작업장 배포 경로 검증]
 tools/             bench_pipeline.py(--stages) · replay_edge.py
-tests/             77개 — protocol · presence_payload · feature_split
+tests/             89개 — protocol · presence_payload · feature_split · thread shutdown
                    config_parity · gating · transport_contract · units · no_cwt_on_edge
 docs/              명세 문서
 _reference/        승계하지 않는 참조 코드
@@ -76,11 +81,13 @@ _reference/        승계하지 않는 참조 코드
 ## 설치
 
 ```bash
-# 개발 PC
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
+# 개발 PC — 네 레포가 같은 상위 폴더에 있는 통합 작업장 기준
+uv sync --extra mqtt --extra dev
 
 # 라즈베리파이
 sudo bash deploy/install.sh          # SPI 활성화 · gpio 그룹 · tmpfs 로그 · systemd
+# 별도 경로에 clone했다면:
+# sudo CONTRACTS_DIR=/path/to/WIFIGUARD-BACKEND/packages/contracts bash deploy/install.sh
 ```
 
 ## 지금 돌려볼 수 있는 것
@@ -89,7 +96,7 @@ sudo bash deploy/install.sh          # SPI 활성화 · gpio 그룹 · tmpfs 로
 cp config/device.toml.example config/device.toml   # tenant_id · device_id 를 채운다
 uv sync --extra mqtt --extra dev                   # Pi 는 cwt extra 를 넣지 않는다
 
-python -m pytest                                   # 77개
+python -m pytest                                   # 89개 + 하드웨어 선택 테스트 2개 skip
 
 # ① 브로커 없이 파이프라인만 (발행 내용을 로그로)
 python -m wifiguard_edge --transport replay --no-mqtt --echo --duration 20
@@ -104,7 +111,7 @@ docker exec wg-mosq mosquitto_sub -h localhost -t 'wifiguard/#' -v
 python tools/replay_edge.py synth --out recordings/synth.npz --seconds 120
 python -m wifiguard_edge --transport replay --replay-source recordings/synth.npz
 
-# ④ 실기 (수신기 연결 시) — device.toml 의 [transport] kind="serial"
+# ④ 실기 (Batch8 수신기 연결 시) — device.toml 의 [transport] kind="spi"
 python -m wifiguard_edge
 ```
 

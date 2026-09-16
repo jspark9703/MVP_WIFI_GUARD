@@ -14,6 +14,9 @@ from typing import Any
 
 from .cache import LiveCache, LiveHub
 from .consumers import IngestConsumer
+from .fall_sink import FallEventSink
+from .fall_state import FallStateManager
+from .fall_notification import FallNotificationDispatcher
 from .mqtt_bridge import MqttBridge
 from .presence_sink import PresenceSink
 from .settings import IngestSettings
@@ -34,6 +37,9 @@ class IngestService:
         self.hub = LiveHub()
         self.presence_sink: PresenceSink | None = None
         self.telemetry_sink = TelemetrySink()
+        self.fall_sink = FallEventSink()
+        self.fall_state = FallStateManager(self.settings.fall_cooldown_seconds)
+        self.fall_notification = FallNotificationDispatcher()
         self.bridge: MqttBridge | None = None
         self.consumer: IngestConsumer | None = None
         self._sweep_stop = threading.Event()
@@ -65,6 +71,9 @@ class IngestService:
                 hub=self.hub,
                 presence_sink=self.presence_sink,
                 telemetry_sink=self.telemetry_sink,
+                fall_sink=self.fall_sink,
+                fall_state=self.fall_state,
+                fall_notification=self.fall_notification,
             )
             self.consumer.start()
 
@@ -94,6 +103,7 @@ class IngestService:
             self.consumer.stop()
         if self.presence_sink is not None:
             self.presence_sink.stop()   # 남은 배치를 비우고 끝낸다
+        self.fall_notification.stop()
         self._started = False
         log.info("인제스트 정지 완료: %s", self.status())
 
@@ -128,6 +138,8 @@ class IngestService:
             "consumer": self.consumer.status() if self.consumer else None,
             "presence_sink": self.presence_sink.status() if self.presence_sink else None,
             "telemetry_sink": self.telemetry_sink.status(),
+            "fall_sink": self.fall_sink.status(),
+            "fall_notification": self.fall_notification.status(),
         }
 
 

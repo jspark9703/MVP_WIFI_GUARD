@@ -43,6 +43,9 @@ class FallEvent(TimestampMixin, ScopeMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     responded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Kafka 재전달/프로세스 재시작에도 같은 추론 전이가 두 이벤트가 되지 않게 한다.
+    source_event_key: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
+    model_version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         scope_xor(),

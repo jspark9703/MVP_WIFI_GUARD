@@ -7,10 +7,16 @@ COMPOSE     := docker compose -f compose/docker-compose.dev.yml --env-file compo
 COMPOSE_OBS := $(COMPOSE) -f compose/docker-compose.obs.yml
 ALEMBIC     := uv run alembic -c packages/db/alembic.ini
 
-.PHONY: up down logs ps obs migrate migrate-down seed api openapi test replay clean
+.PHONY: up model-up model-check down logs ps obs migrate migrate-down seed api openapi test replay clean
 
 up:              ## 미들웨어 전 스택 기동
 	$(COMPOSE) up -d
+
+model-up:        ## 외부 주입된 weights/model.pt를 포함한 전체 E2E 기동
+	$(COMPOSE) --profile model up -d
+
+model-check:     ## Kafka 없이 체크포인트 형식·피처·추론 1회를 검증
+	uv run --project services/inference python tools/validate_model_checkpoint.py weights/model.pt
 
 obs:             ## 관측 스택까지 함께 기동
 	$(COMPOSE_OBS) up -d

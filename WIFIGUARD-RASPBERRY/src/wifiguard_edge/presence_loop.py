@@ -44,7 +44,8 @@ class PresenceLoop(threading.Thread):
             presence_timeout_s=config.presence_timeout_s,
         )
 
-        self._stop = threading.Event()
+        # Do not shadow threading.Thread._stop(), which join() invokes.
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._last: PresenceStatus | None = None
         self._tick_count = 0
@@ -52,12 +53,12 @@ class PresenceLoop(threading.Thread):
         self._last_error: str | None = None
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     def run(self) -> None:
         log.info("presence loop start: stride=%.2fs", self.stride_sec)
         next_tick = time.monotonic()
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             now = time.monotonic()
             if now < next_tick:
                 time.sleep(min(next_tick - now, 0.05))

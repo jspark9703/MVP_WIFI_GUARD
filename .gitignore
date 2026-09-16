@@ -1,0 +1,31 @@
+# Workspace-only caches and generated validation artifacts
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.venv/
+**/node_modules/
+**/dist/
+**/coverage/
+
+# ESP-IDF and other generated build trees
+**/build/
+**/build-*/
+**/sdkconfig
+**/sdkconfig.old
+
+# Rendered report QA output
+DOCS/.report_qa_*/
+
+# Operational model artifacts and local validation data
+**/*.pt
+**/*.pth
+**/.validation-demo/
+
+# Local configuration and credentials
+**/.env
+**/.env.*
+!**/.env.example
+**/certs/*.pem
+**/certs/*.key

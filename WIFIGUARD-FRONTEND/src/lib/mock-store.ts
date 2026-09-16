@@ -73,13 +73,7 @@ export interface Session {
 // 대문자만 다름). LEAVING(공간 비우기) → WAITING_ACK(장치 응답 대기) →
 // WAITING_AGC(AGC 보정) → MEASURING(움직임/재실 baseline 측정) → DONE.
 export type CalibrationStage =
-  | "IDLE"
-  | "LEAVING"
-  | "WAITING_ACK"
-  | "WAITING_AGC"
-  | "MEASURING"
-  | "DONE"
-  | "ERROR";
+  "IDLE" | "LEAVING" | "WAITING_ACK" | "WAITING_AGC" | "MEASURING" | "DONE" | "ERROR";
 
 // 각 단계의 실제 소요시간(초) — mock 타이머와 실백엔드 폴링 화면이 함께 참조하는 기준.
 // backend/onboarding.py run_calibration()의 기본 파라미터와 동일(leave_wait_s/
