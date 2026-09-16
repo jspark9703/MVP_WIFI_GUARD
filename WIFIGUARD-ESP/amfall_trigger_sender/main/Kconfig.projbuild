@@ -1,0 +1,30 @@
+menu "WIFI-GUARD ESP32-C5 native 320 Hz transmitter"
+
+    config WIFI_GUARD_TX_SSID
+        string "5 GHz SoftAP SSID"
+        default "WIFI-GUARD-PAIR"
+
+    config WIFI_GUARD_TX_PASSWORD
+        string "WPA2 SoftAP password"
+        default "change-me-amfall"
+
+    config WIFI_GUARD_TX_CHANNEL
+        int "5 GHz SoftAP channel"
+        range 36 177
+        default 48
+
+    config WIFI_GUARD_TX_TRIGGER_PORT
+        int "Receiver UDP trigger port"
+        range 1 65535
+        default 3333
+
+    config WIFI_GUARD_TX_RATE_HZ
+        int "UDP trigger rate in Hz"
+        range 1 1000
+        default 320
+        help
+            The scheduler uses a fractional absolute-deadline accumulator. At
+            320 Hz the interval is exactly 3125 us; the same scheduler avoids
+            accumulating relative-delay drift.
+
+endmenu

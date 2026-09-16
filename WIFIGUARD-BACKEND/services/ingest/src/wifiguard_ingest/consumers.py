@@ -3,7 +3,7 @@
 토픽 두 개를 한 컨슈머 스레드가 함께 구독한다. presence 4Hz + telemetry 1Hz 는 한 스레드로
 충분하고, 스레드를 나누면 같은 기기의 두 갈래가 서로 다른 순서로 처리될 수 있다.
 
-`csi-inference-result`(낙상)는 **M5 에서** 붙인다. 지금 구독해도 발행자가 없다.
+`csi-inference-result`는 확률을 상태머신·DB·실시간 캐시로 보낸다.
 
 ## 한 건이 실패해도 컨슈머는 살아야 한다
 
@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import ValidationError
 from wifiguard_contracts import topics
-from wifiguard_contracts.kafka import FeatureRecord, StatusRecord
+from wifiguard_contracts.kafka import FeatureRecord, InferenceResult, StatusRecord
 from wifiguard_contracts.mqtt import PRESENCE_STATUS_FIELDS
 
 log = logging.getLogger("ingest.consumers")
@@ -36,6 +36,9 @@ class IngestConsumer:
         hub,
         presence_sink=None,
         telemetry_sink=None,
+        fall_sink=None,
+        fall_state=None,
+        fall_notification=None,
         consumer_factory=None,
     ) -> None:
         self.settings = settings
@@ -43,12 +46,15 @@ class IngestConsumer:
         self.hub = hub
         self.presence_sink = presence_sink
         self.telemetry_sink = telemetry_sink
+        self.fall_sink = fall_sink
+        self.fall_state = fall_state
+        self.fall_notification = fall_notification
         self._consumer_factory = consumer_factory
         self._consumer: Any = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
-        self._counts = {"presence": 0, "signal": 0, "telemetry": 0, "ack": 0}
+        self._counts = {"presence": 0, "signal": 0, "telemetry": 0, "ack": 0, "inference": 0}
         self._errors = 0
         self._last_error: str | None = None
 
@@ -71,6 +77,7 @@ class IngestConsumer:
         return KafkaConsumer(
             topics.KAFKA_FEATURE_STREAM,
             topics.KAFKA_TELEMETRY,
+            topics.KAFKA_INFERENCE_RESULT,
             bootstrap_servers=self.settings.kafka_bootstrap.split(","),
             group_id=self.settings.kafka_group,
             # 실시간 경로다. 재기동 시 밀린 것을 따라잡기보다 지금 값을 보는 게 맞다.
@@ -113,6 +120,8 @@ class IngestConsumer:
                 record = FeatureRecord.model_validate_json(raw)
             elif kafka_topic == topics.KAFKA_TELEMETRY:
                 record = StatusRecord.model_validate_json(raw)
+            elif kafka_topic == topics.KAFKA_INFERENCE_RESULT:
+                record = InferenceResult.model_validate_json(raw)
             else:
                 return False
         except ValidationError as exc:
@@ -121,7 +130,7 @@ class IngestConsumer:
                 self._last_error = f"레코드 검증 실패: {exc.error_count()} 건"
             return False
 
-        kind = record.payload.kind
+        kind = record.kind if isinstance(record, InferenceResult) else record.payload.kind
         with self._lock:
             self._counts[kind] = self._counts.get(kind, 0) + 1
 
@@ -129,6 +138,8 @@ class IngestConsumer:
             self._on_presence(record)
         elif kind == "telemetry":
             self._on_telemetry(record)
+        elif kind == "inference":
+            self._on_inference(record)
         # signal 은 모델서버가 소비한다(M5). ack 는 기록만 하고 흘려보낸다.
         return True
 
@@ -147,6 +158,24 @@ class IngestConsumer:
         if self.telemetry_sink is not None:
             self.telemetry_sink.apply(record.device_id, msg.ts, online=bool(msg.link.connected))
         self.hub.publish_from_thread(state)
+
+    def _on_inference(self, result: InferenceResult) -> None:
+        if self.fall_state is None:
+            return
+        update = self.fall_state.apply(result)
+        if update is None:  # duplicate
+            return
+        state = self.cache.apply_fall(
+            result.device_id,
+            result.tenant_id,
+            update.fields,
+            result.inferred_at,
+        )
+        self.hub.publish_from_thread(state)
+        if update.new_fall and self.fall_sink is not None:
+            persisted = self.fall_sink.record(result)
+            if persisted and self.fall_notification is not None:
+                self.fall_notification.notify(result)
 
     def status(self) -> dict[str, Any]:
         with self._lock:

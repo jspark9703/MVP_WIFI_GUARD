@@ -54,7 +54,8 @@ class NtfyNotifier(threading.Thread):
         self.server = server.rstrip("/")
         self.notify_fall_enabled = notify_fall_enabled
         self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=QUEUE_MAXSIZE)
-        self._stop = threading.Event()
+        # Thread._stop() is an internal method used by join(); never shadow it.
+        self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._sent_count = 0
         self._failed_count = 0
@@ -105,7 +106,7 @@ class NtfyNotifier(threading.Thread):
 
     def run(self) -> None:
         log.info("notifier start: server=%s topic=%s", self.server, self.topic)
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 payload = self._queue.get(timeout=0.5)
             except queue.Empty:
@@ -115,7 +116,7 @@ class NtfyNotifier(threading.Thread):
             self._send_with_retry(payload)
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         with contextlib.suppress(queue.Full):
             self._queue.put_nowait(None)
 

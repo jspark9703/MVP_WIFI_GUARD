@@ -1,0 +1,10 @@
+{
+  "id": "E1_S01_C01_T01",
+  "format": "mendeley",
+  "fs": 320,
+  "segments": [
+    {"path": "../data/mendeley/E1_S01_C01_A01_T01.csv", "activity": "A01"},
+    {"path": "../data/mendeley/E1_S01_C01_A02_T01.csv", "activity": "A02"},
+    {"path": "../data/mendeley/E1_S01_C01_A03_T01.csv", "activity": "A03"}
+  ]
+}

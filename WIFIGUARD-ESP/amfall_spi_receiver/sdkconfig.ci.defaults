@@ -1,0 +1,9 @@
+# COMPILE-ONLY pin assignment. MUST NOT BE FLASHED.
+# These values merely exercise the ESP-IDF build on an ESP32-C5 target. They
+# are not a statement about the receiver board's exposed or safe GPIOs.
+CONFIG_WIFI_GUARD_BOARD_PINS_APPROVED=y
+CONFIG_WIFI_GUARD_SPI_SCLK_GPIO=2
+CONFIG_WIFI_GUARD_SPI_MOSI_GPIO=3
+CONFIG_WIFI_GUARD_SPI_MISO_GPIO=4
+CONFIG_WIFI_GUARD_SPI_CS_GPIO=5
+CONFIG_WIFI_GUARD_SPI_READY_GPIO=6

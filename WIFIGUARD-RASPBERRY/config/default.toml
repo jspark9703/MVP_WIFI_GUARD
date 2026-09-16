@@ -20,15 +20,20 @@ tenant_id = ""      # FACILITY 는 시설 UUID, HOME 은 "home-{userId}"
 device_id = ""      # 백엔드가 발급한 기기 UUID
 
 [transport]
-kind = "serial"                # serial | replay | spi(미구현 — 짝 펌웨어 없음)
+kind = "serial"                # serial | replay | spi (WGSP Batch8)
 serial_port = ""               # 비우면 자동 탐지
 baudrate = 2000000             # ★ 펌웨어 CONFIG_ESP_CONSOLE_UART_BAUDRATE 와 같아야 한다 (2026-09-10: 921600 → 2000000)
 replay_source = "synthetic"
 replay_speed = 1.0
 spi_bus = 0
 spi_device = 0
-max_speed_hz = 10000000
+max_speed_hz = 6000000         # 실기 검증값
 gpio_data_ready = 25
+ready_gpio_chip = "/dev/gpiochip0"
+ready_bias = "pull-down"
+spi_batch_frames = 8
+spi_transfer_api = "direct-ioctl"
+spi_protocol_resync_seconds = 0.05
 
 [presence]
 # --- MV(움직임) 신호체인 ---

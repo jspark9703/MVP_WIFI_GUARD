@@ -1,0 +1,4 @@
+# Copy this file to sdkconfig.private.defaults and keep the copy untracked.
+# Use the same private PSK as amfall_spi_receiver.
+CONFIG_WIFI_GUARD_TX_SSID="WIFI-GUARD-PAIR"
+CONFIG_WIFI_GUARD_TX_PASSWORD="replace-with-private-password"

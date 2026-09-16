@@ -1,11 +1,7 @@
 """전송 계층 계약 — 상위 파이프라인이 UART/재생/SPI 를 구별하지 않아야 한다.
 
-`transport/base.py` 를 ABC 가 아니라 Protocol 로 둔 이유가 여기 있다. `SerialReader` 는
-이미 계약을 만족하므로 한 줄도 고치지 않았고, 새 구현(`ReplaySource`)만 맞추면 된다.
-그 "맞춤"이 실제로 성립하는지 확인하는 것이 이 파일의 일이다.
-
-`spi_reader.SPIInterface` 는 **의도적으로 제외**한다 — 계약 4종을 0개 구현하고 있고,
-짝이 되는 펌웨어도 없다. 그 사실을 `create_source` 가 이유와 함께 막는지만 본다.
+`transport/base.py` 를 ABC 가 아니라 Protocol 로 둔 이유가 여기 있다. UART, replay,
+WGSP Batch8 SPI가 같은 계약을 만족하는지 확인한다.
 """
 
 from __future__ import annotations
@@ -17,6 +13,8 @@ import pytest
 from wifiguard_edge.csi.buffer import RingBuffer
 from wifiguard_edge.transport.base import CsiSource, create_source
 from wifiguard_edge.transport.replay_source import ReplaySource
+from wifiguard_edge.transport.wgsp_source import WgspBatch8Source
+from wifiguard_edge.config import TransportConfig
 
 CONTRACT_MEMBERS = ("start", "stop", "join", "running", "packet_count", "status", "get_window", "send_line")
 
@@ -38,12 +36,12 @@ def test_serial_reader_satisfies_protocol_unchanged():
         assert hasattr(reader, name), name
 
 
-def test_spi_is_refused_with_a_reason():
-    """조용히 실패하지 않고, 왜 못 쓰는지 말해야 한다."""
-    with pytest.raises(NotImplementedError) as exc:
-        create_source("spi", RingBuffer(5.0), config=None)
-    msg = str(exc.value)
-    assert "spi_slave" in msg and "612B" in msg
+def test_spi_source_satisfies_protocol_without_hardware_access():
+    source = create_source("spi", RingBuffer(5.0), config=TransportConfig(kind="spi"))
+    assert isinstance(source, WgspBatch8Source)
+    assert isinstance(source, CsiSource)
+    for name in CONTRACT_MEMBERS:
+        assert hasattr(source, name), name
 
 
 def test_unknown_kind_is_rejected():
@@ -52,11 +50,7 @@ def test_unknown_kind_is_rejected():
 
 
 def test_factory_does_not_import_unused_backends():
-    """`spidev`/`RPi.GPIO` 가 없는 개발 PC 에서도 팩토리 import 가 성공해야 한다.
-
-    `transport/spi_reader.py:6-7` 이 모듈 최상단에서 그것들을 import 하는 탓에
-    그 모듈 자체는 개발 PC 에서 import 되지 않는다. 팩토리가 지연 import 하는 이유다.
-    """
+    """Pi 하드웨어 의존성이 없는 개발 PC에서도 팩토리 import가 성공해야 한다."""
     import importlib
 
     importlib.import_module("wifiguard_edge.transport.base")  # 예외 없이 통과해야 한다

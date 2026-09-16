@@ -1,0 +1,33 @@
+[project]
+name = "wifiguard-inference"
+version = "0.1.0"
+description = "WIFI-GUARD Kafka signal-to-inference worker"
+requires-python = ">=3.11"
+dependencies = [
+  "kafka-python>=2.1",
+  "wifiguard-contracts",
+  "wifiguard-edge[cwt]",
+  "wifiguard-serving",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[project.scripts]
+wifiguard-inference = "wifiguard_inference.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wifiguard_inference"]
+
+[tool.uv.sources]
+wifiguard-contracts = { path = "../../packages/contracts", editable = true }
+wifiguard-edge = { path = "../../../WIFIGUARD-RASPBERRY", editable = true }
+wifiguard-serving = { path = "../model-serving", editable = true }
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "../model-serving/src", "../../packages/contracts/src", "../../../WIFIGUARD-RASPBERRY/src"]
+testpaths = ["tests"]

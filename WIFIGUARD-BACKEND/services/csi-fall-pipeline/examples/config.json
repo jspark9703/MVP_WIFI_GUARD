@@ -1,0 +1,23 @@
+{
+  "output": "../outputs/example",
+  "feature": "channel_mean",
+  "cwt": false,
+  "backbone": "compact",
+  "window_seconds": 3,
+  "stride_seconds": 0.25,
+  "overlap_threshold": 0.5,
+  "guard_seconds": 0.5,
+  "training": {
+    "seed": 42,
+    "source_epochs": 20,
+    "target_epochs": 30,
+    "batch_size": 256,
+    "refit": true
+  },
+  "records": [
+    {"id": "S1_record_01", "format": "local", "path": "../data/S1/record_01.csv", "fs": 166.66666666666666, "role": "target", "split": "train"},
+    {"id": "S1_record_02", "format": "local", "path": "../data/S1/record_02.csv", "fs": 166.66666666666666, "role": "target", "split": "val"},
+    {"id": "S1_record_03", "format": "local", "path": "../data/S1/record_03.csv", "fs": 166.66666666666666, "role": "target", "split": "test"},
+    {"id": "S2_record_01", "format": "local", "path": "../data/S2/record_01.csv", "fs": 166.66666666666666, "role": "external", "split": "external"}
+  ]
+}

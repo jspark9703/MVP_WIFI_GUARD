@@ -1,0 +1,10 @@
+# Direct dependencies used for local verification (Python 3.11).
+# Install a matching torch/torchvision CUDA wheel pair for your own hardware.
+numpy==1.26.4
+scipy==1.17.1
+pandas==3.0.5
+scikit-learn==1.9.0
+torch==2.6.0
+torchvision==0.21.0
+ssqueezepy==0.6.6
+pytest==9.1.1

@@ -81,7 +81,10 @@ class ReplaySource(threading.Thread):
         self.fs_hz = fs_hz
         self.subcarriers = subcarriers
         self._rng = np.random.default_rng(seed)
-        self._stop = threading.Event()
+        # ``threading.Thread`` already owns a private ``_stop()`` method that
+        # ``join()`` calls after the worker exits.  Shadowing it with an Event
+        # makes an otherwise clean shutdown fail with ``Event is not callable``.
+        self._stop_event = threading.Event()
         self._frames_emitted = 0
         self._t0 = time.monotonic()
         self._recording: tuple[np.ndarray, np.ndarray] | None = None
@@ -97,11 +100,11 @@ class ReplaySource(threading.Thread):
 
     # ── CsiSource 계약 ──────────────────────────────────────────────
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
 
     @property
     def running(self) -> bool:
-        return not self._stop.is_set() and self.is_alive()
+        return not self._stop_event.is_set() and self.is_alive()
 
     @property
     def packet_count(self) -> int:
@@ -181,7 +184,7 @@ class ReplaySource(threading.Thread):
         period = 1.0 / (self.fs_hz * self.speed)
         idx = 0
         next_at = time.monotonic()
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             now = time.monotonic()
             if now < next_at:
                 time.sleep(min(next_at - now, 0.02))

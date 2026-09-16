@@ -3,7 +3,7 @@
 #   sudo cp deploy/wifiguard-edge.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now wifiguard-edge
 #
-# 주의: __main__.py 가 아직 없다. 구현 전에는 이 유닛이 기동에 실패한다 (PORTING.md 참조).
+# 설치 스크립트가 User/Group/WorkingDirectory를 실제 설치값으로 치환한다.
 
 [Unit]
 Description=WIFI-GUARD Edge (CSI 수집 · 재실감지 · 피처 추출 · MQTT 업링크)

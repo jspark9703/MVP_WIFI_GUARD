@@ -23,12 +23,10 @@ client_cert = "deploy/certs/device.pem.crt"
 client_key  = "deploy/certs/device.private.key"
 
 [transport]
-# "serial" — 현재 유일하게 동작하는 실기 경로 (UART, csi_recv 펌웨어)
+# "serial" — 기존 UART 경로 (csi_recv 펌웨어)
 # "replay" — Pi·수신기 없이 개발 PC 에서 전 배선 구동 (tools/replay_edge.py)
-# "spi"    — ★ 아직 쓸 수 없다. 짝이 되는 ESP 펌웨어에 SPI slave 코드가 없고,
-#            transport/protocol.py 의 프레임 정의(CSI 128B)가 펌웨어가 실제로 내보내는
-#            612B 를 담지 못한다. 자세한 내용은 ../WIFIGUARD-ESP/README.md 의 SPI 절.
-kind = "serial"
+# "spi"    — 검증된 WGSP v1 Batch8 경로 (amfall_spi_receiver 펌웨어)
+kind = "spi"
 
 # --- kind = "serial" ---
 serial_port = ""        # 비우면 자동 탐지 (pyserial list_ports)
@@ -39,8 +37,13 @@ baudrate = 2000000      # ★ 펌웨어 CONFIG_ESP_CONSOLE_UART_BAUDRATE 와 반
 replay_source = "synthetic"   # "synthetic" | 저장된 recording 경로
 replay_speed = 1.0            # 1.0 = 실시간
 
-# --- kind = "spi" (미사용) ---
+# --- kind = "spi" ---
 spi_bus = 0
 spi_device = 0
-max_speed_hz = 10000000
-gpio_data_ready = 25    # BCM, RISING
+max_speed_hz = 6000000
+gpio_data_ready = 25
+ready_gpio_chip = "/dev/gpiochip0"
+ready_bias = "pull-down"
+spi_batch_frames = 8
+spi_transfer_api = "direct-ioctl"
+spi_protocol_resync_seconds = 0.05

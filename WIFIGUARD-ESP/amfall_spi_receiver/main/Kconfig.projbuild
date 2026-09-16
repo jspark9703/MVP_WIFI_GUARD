@@ -1,0 +1,117 @@
+menu "WIFI-GUARD ESP32-C5 AM-Fall SPI capture"
+
+    config WIFI_GUARD_WIFI_SSID
+        string "Wi-Fi SSID"
+        default ""
+
+    config WIFI_GUARD_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    choice WIFI_GUARD_WIFI_BAND
+        prompt "Wi-Fi band constraint"
+        default WIFI_GUARD_WIFI_BAND_5G_ONLY
+
+        config WIFI_GUARD_WIFI_BAND_AUTO
+            bool "Automatic (2.4 GHz or 5 GHz)"
+
+        config WIFI_GUARD_WIFI_BAND_2G_ONLY
+            bool "2.4 GHz only"
+
+        config WIFI_GUARD_WIFI_BAND_5G_ONLY
+            bool "5 GHz only"
+    endchoice
+
+    config WIFI_GUARD_EXPECTED_CHANNEL
+        int "Required primary Wi-Fi channel"
+        range 1 177
+        default 48
+        help
+            Frames from any other channel are rejected. The AM-Fall hardware
+            profile is pinned to 5 GHz HE20 channel 48.
+
+    config WIFI_GUARD_UDP_PORT
+        int "UDP trigger sink port"
+        range 1 65535
+        default 3333
+
+    config WIFI_GUARD_MAX_QUEUE
+        int "Maximum queued CSI frames"
+        range 4 64
+        default 64
+
+    config WIFI_GUARD_FILTER_AP_BSSID
+        bool "Require source MAC to match associated AP BSSID"
+        default y
+
+    config WIFI_GUARD_BOARD_PINS_APPROVED
+        bool "I reviewed the exact receiver board pinout and wiring"
+        default n
+        help
+            Safety gate. Leave disabled until the exact ESP32-C5 board model,
+            exposed GPIOs, boot strapping pins, and 3.3 V wiring are reviewed.
+
+    config WIFI_GUARD_SPI_SCLK_GPIO
+        int "SPI SCLK GPIO on ESP32-C5"
+        range 0 31
+        default 2
+
+    config WIFI_GUARD_SPI_MOSI_GPIO
+        int "SPI MOSI GPIO on ESP32-C5 (Pi to C5)"
+        range 0 31
+        default 3
+
+    config WIFI_GUARD_SPI_MISO_GPIO
+        int "SPI MISO GPIO on ESP32-C5 (C5 to Pi)"
+        range 0 31
+        default 4
+
+    config WIFI_GUARD_SPI_CS_GPIO
+        int "SPI CS GPIO on ESP32-C5"
+        range 0 31
+        default 5
+
+    config WIFI_GUARD_SPI_READY_GPIO
+        int "READY output GPIO on ESP32-C5"
+        range 0 31
+        default 6
+
+    config WIFI_GUARD_SPI_MODE
+        int "SPI mode"
+        range 0 3
+        default 0
+
+    config WIFI_GUARD_SPI_BATCH_FRAMES
+        int "CSI frames per physical SPI transaction"
+        range 1 8
+        default 1
+        help
+            Concatenate this many complete 576-byte WGSP frames under one CS
+            assertion. A value of 8 preserves native 320 Hz samples while
+            reducing the READY/CS handshake rate to 40 transactions/second.
+
+    config WIFI_GUARD_SPI_READY_ACTIVE_HIGH
+        bool "READY is active high"
+        default y
+
+    config WIFI_GUARD_SPI_COMPLETION_TRACE
+        bool "Diagnostic-only bounded SPI completion trace (not a load-test image)"
+        default n
+        depends on ESP_TIMER_IN_IRAM
+        help
+            Record the first 64 SPI attempts after boot and cumulative results.
+            ISR callbacks only record metadata; UART output is deferred to the
+            diagnostic task. This adds measurement overhead and is intended for
+            isolated one-read tests, not production throughput measurements.
+
+    config WIFI_GUARD_SPI_CS_PULLUP
+        bool "Opt-in internal pull-up on SPI CS only (hardware validation required)"
+        default n
+        help
+            Bias the configured CS input high after SPI initialization, before
+            the writer starts. Print its IO configuration once at boot. No
+            changes to SCLK, MOSI, MISO, READY, transaction size or loss handling.
+            Use the separate CS-pull-up diagnostic package for comparison first.
+            An enabled pull-up is not proof of electrical or streaming stability.
+
+endmenu

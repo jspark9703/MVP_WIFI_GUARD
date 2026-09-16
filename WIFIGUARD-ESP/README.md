@@ -4,9 +4,10 @@ ESP32-C5 두 대로 CSI(Channel State Information)를 만들어 호스트에 흘
 **보드가 두 대여야 한다** — 한 대만으로는 CSI가 나오지 않는다.
 
 ```
-[ESP32-C5 TX]  ──ESP-NOW 200pps, 5GHz ch48──►  [ESP32-C5 RX]  ──UART 2 Mbaud──►  [Raspberry Pi]
-   csi_send                                       csi_recv                        WIFIGUARD-RASPBERRY
-                                            csi_recv_calibrate
+[ESP32-C5 TX] ──UDP 320Hz, 5GHz ch48──► [ESP32-C5 RX] ──WGSP Batch8/SPI──► [Raspberry Pi]
+ amfall_trigger_sender                  amfall_spi_receiver
+
+[기존 호환 경로] csi_send ──ESP-NOW 200pps──► csi_recv / csi_recv_calibrate ──UART 2Mbaud
 ```
 
 > ## ⚠ 이 레포는 아직 `git init` 전이다
@@ -22,9 +23,9 @@ ESP32-C5 두 대로 CSI(Channel State Information)를 만들어 호스트에 흘
 
 | 하는 것 | 하지 않는 것 |
 |---|---|
-| ESP-NOW 브로드캐스트 송신 (200pps) | **재실감지·낙상 판정** → Pi / 클라우드 |
+| UDP 트리거 송신(320Hz)와 기존 ESP-NOW 송신(200pps) | **재실감지·낙상 판정** → Pi / 클라우드 |
 | CSI 수집 · MAC 필터 · AGC/FFT 게인 보상 | 신호 전처리(서브캐리어 선택·PCA) → Pi |
-| 바이너리 프레임 조립 + 체크섬 → UART | 네트워크 업링크 → Pi |
+| WGSP v1 Batch8 → SPI 및 기존 UART 프레임 | 네트워크 업링크 → Pi |
 | AGC 게인 캘리브레이션 (`csi_recv_calibrate`) | 임계값 산출 → Pi (`calibration/onboarding.py`) |
 
 ---
@@ -35,6 +36,8 @@ ESP32-C5 두 대로 CSI(Channel State Information)를 만들어 호스트에 흘
 csi_send/                송신기. ESP-NOW 200pps, MAC 위장 1a:00:00:00:00:00
 csi_recv/                수신기(기본). CSI → UART 바이너리 스트림
 csi_recv_calibrate/      수신기 변형. "train" 수신 후 ~1초 AGC 창을 거쳐 게인 고정
+amfall_trigger_sender/   5GHz SoftAP + UDP 트리거, 320Hz
+amfall_spi_receiver/     CSI → WGSP v1, 8프레임/4608B SPI slave
 wifi_sensing_demo_router/  ★ 무관한 Espressif 예제 (esp_wifi_sensing). 낙상 파이프라인과 별개
 tools/
   fall_detect/           ★ 재실 신호체인의 원조 — WIFIGUARD-RASPBERRY presence/ 의 이식 원본
@@ -49,9 +52,9 @@ tools/
 각 펌웨어 디렉토리가 독립 ESP-IDF 프로젝트다.
 
 ```bash
-cd csi_recv                       # 또는 csi_send / csi_recv_calibrate
+cd amfall_spi_receiver             # 또는 amfall_trigger_sender / 기존 UART 프로젝트
 idf.py set-target esp32c5
-idf.py build
+idf.py -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.waveshare-n16r8.defaults;sdkconfig.private.defaults" build
 idf.py -p <PORT> flash monitor
 ```
 
@@ -124,24 +127,17 @@ AGC 게인 샘플을 모아 `esp_csi_gain_ctrl_set_rx_force_gain`으로 고정�
 
 ---
 
-## ⚠ SPI는 구현되어 있지 않다
+## WGSP Batch8 SPI 계약
 
-명세와 Pi의 `transport/protocol.py`는 ESP↔Pi 링크를 **SPI**로 규정하지만,
-**이 레포의 펌웨어 3종 어디에도 SPI slave 코드가 없다**(`spi_slave`·`driver/spi` grep 0건).
-그리고 두 정의는 모든 축에서 어긋난다.
+`amfall_spi_receiver`와 Raspberry의 `transport/wgsp_protocol.py`가 같은 버전 계약을
+공유한다. 한 WGSP 프레임은 576B(80B 헤더 + 490B IQ + 2B 패딩 + CRC32)이고,
+한 CS 구간에서 8프레임, 총 4608B를 전송한다. READY는 수신기가 완전한 Batch8을
+준비했을 때 high가 되고 트랜잭션 완료 시 fall/rise한다.
 
-| 축 | UART (여기, 실제 동작) | Pi `transport/protocol.py` (SPI) | 명세 목표 |
-|---|---|---|---|
-| 매직 | `0xA55A` | `0xABCD` | `0xA55A` |
-| 헤더 | 46 B | 8 B | 46 B |
-| `csi_len` | uint16 | **uint8** | uint16 |
-| CSI 최대 | **612 B (306 서브캐리어)** | **128 B (64 서브캐리어)** | 612 B |
-| 프레임 | 가변 최대 660 B | 140 B 고정 / 256·4096 B | 626 B / 8192 B |
-| 체크섬 | 있음 | **없음** | 있음 |
-
-즉 현재 SPI 정의로는 이 펌웨어가 실제로 만드는 CSI를 **담을 수 없다**(128 B < 612 B).
-부분 수정이 아니라 양쪽 재작성이 필요하며, 그때까지 유효한 경로는 UART뿐이다.
-실시간 파이프라인 1차 구현은 UART로 진행한다(계획서 D2·R5).
+검증값은 SPI mode 0, 6MHz, Raspberry CE0/BCM8, SCLK/BCM11, MISO/BCM9,
+MOSI/BCM10, READY/BCM25이다. Raspberry의 spidev 버퍼는 8192B 이상이어야 한다.
+30초 실측에서 19,268프레임, 320.014Hz, 전송 오류 0과 Kafka 적재를 확인했다.
+기존 UART 프로젝트는 회귀 및 캘리브레이션 호환을 위해 삭제하지 않았다.
 
 ---
 

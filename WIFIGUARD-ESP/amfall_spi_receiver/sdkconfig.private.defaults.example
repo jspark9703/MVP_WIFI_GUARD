@@ -1,0 +1,4 @@
+# Copy this file to sdkconfig.private.defaults and keep the copy untracked.
+# Use a real private PSK shared with amfall_trigger_sender.
+CONFIG_WIFI_GUARD_WIFI_SSID="WIFI-GUARD-PAIR"
+CONFIG_WIFI_GUARD_WIFI_PASSWORD="replace-with-private-password"
