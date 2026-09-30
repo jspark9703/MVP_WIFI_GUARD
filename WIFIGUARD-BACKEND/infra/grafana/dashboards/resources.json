@@ -1,0 +1,16 @@
+{
+  "title": "WIFI-GUARD Resources",
+  "uid": "wifiguard-resources",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "2s",
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Host CPU %", "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}, "targets": [{"expr": "wifiguard_host_cpu_percent", "legendFormat": "CPU"}], "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}}},
+    {"id": 2, "type": "timeseries", "title": "Host memory", "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}, "targets": [{"expr": "wifiguard_host_memory_used_bytes", "legendFormat": "used"}, {"expr": "wifiguard_host_memory_total_bytes", "legendFormat": "total"}], "fieldConfig": {"defaults": {"unit": "bytes"}}},
+    {"id": 3, "type": "timeseries", "title": "GPU utilization %", "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}, "targets": [{"expr": "wifiguard_gpu_utilization_percent", "legendFormat": "{{name}}"}], "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}}},
+    {"id": 4, "type": "timeseries", "title": "GPU memory MiB", "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}, "targets": [{"expr": "wifiguard_gpu_memory_used_mib", "legendFormat": "used {{name}}"}, {"expr": "wifiguard_gpu_memory_total_mib", "legendFormat": "total {{name}}"}]},
+    {"id": 5, "type": "timeseries", "title": "Disk used", "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}, "targets": [{"expr": "wifiguard_host_disk_used_bytes", "legendFormat": "used"}, {"expr": "wifiguard_host_disk_total_bytes", "legendFormat": "total"}], "fieldConfig": {"defaults": {"unit": "bytes"}}},
+    {"id": 6, "type": "timeseries", "title": "Container CPU", "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}, "targets": [{"expr": "rate(container_cpu_usage_seconds_total{name!~\"\"}[1m]) * 100", "legendFormat": "{{name}}"}], "fieldConfig": {"defaults": {"unit": "percent"}}}
+  ]
+}

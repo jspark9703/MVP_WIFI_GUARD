@@ -1,0 +1,32 @@
+{
+  "schema": "wifiguard-model-software-e2e-v1",
+  "status": "SOFTWARE_E2E_PASS",
+  "hardware_exercised": false,
+  "actual_model_path": {
+    "messages": 4,
+    "model_version": "inhouse-segmentation:v1:7cb0b7436f0b",
+    "threshold": 0.5,
+    "mean_feature_ms": 150.99082775032002,
+    "mean_infer_ms": 42.3344135001571,
+    "probability_range": [
+      3.508348243030923e-07,
+      3.5113737339997897e-07
+    ]
+  },
+  "persistence_path": {
+    "state_input": "five contract-valid positive inference records",
+    "confidence": 0.99,
+    "source": "EDGE",
+    "api_visible": true
+  },
+  "ingest": {
+    "final_status": "ok",
+    "errors": 0,
+    "fall_sink_errors": 0
+  },
+  "not_proven": [
+    "physical ESP32/Raspberry Pi SPI and GPIO transport",
+    "accuracy on real fall/non-fall CSI recordings",
+    "production multi-device network capacity"
+  ]
+}

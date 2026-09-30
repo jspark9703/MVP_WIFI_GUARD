@@ -1,4 +1,4 @@
-"""실시간 3초 윈도우에서 모델 입력 피처(S3, PCA-ACF)를 만든다.
+"""실시간 3초 윈도우를 학습과 동일한 30채널 진폭창으로 만든다.
 
 오프라인 배치 스크립트 build_inhouse_native_hz_midpoint_s3_acf.py 의
 compute_native_features 경로를 링버퍼 입력에 맞게 감싼 것이다.
@@ -7,21 +7,21 @@ compute_native_features 경로를 링버퍼 입력에 맞게 감싼 것이다.
 
 ## 함수 3개로 나뉘어 있다 (2026-09-10, D1)
 
-    extract_window_signal(times, amplitude, cfg) -> WindowSignal      ← 엣지(Pi)가 여기까지
-    features_from_signal(signal, fs_hz, cfg)     -> WindowFeatures    ← 클라우드 모델서버
-    extract_window_features(times, amplitude, cfg) -> WindowFeatures  ← 위 둘의 합성 (무변경)
+    extract_window_signal(times, amplitude, cfg) -> WindowSignal      ← 엣지(Pi) 운영 경로
+    features_from_signal(signal, fs_hz, cfg)     -> WindowFeatures    ← 구 모델 회귀·진단 경로
+    extract_window_features(times, amplitude, cfg) -> WindowFeatures  ← 구 경로 합성
 
-엣지가 S3(224,224)+ACF(1,128,64) **233KB**를 올리던 설계는 4Hz 기준 7.5Mbps/기기라
-성립하지 않았고, 개발 PC 벤치 p90 489ms 로 250ms 스트라이드 예산도 넘겼다. 절단점은
-`select_pc_signal()` 의 반환값 — S3 와 ACF **양쪽의 유일한 공통 조상**이며 약 2KB 다.
+현재 temporal segmentation 모델은 30채널 진폭창 전체에서 S3·PCA-ACF 피처를
+계산하므로 1-D 대표신호만으로는 입력을 복원할 수 없다. 운영 메시지는 학습
+고정 규칙으로 선택·리샘플한 `WindowSignal.amplitude`(`T x 30`)을 싣는다.
+`signal`은 구 계약과 진단 호환을 위해 함께 유지한다.
 
 `extract_window_features` 의 시그니처와 출력은 **바뀌지 않았다.** 벤치·회귀 대조가 이 함수를
 쓰고, 클라우드는 `features_from_signal` 을 쓴다. 둘의 동등성은
 `tests/test_feature_split.py` 가 배열 비트 단위로 단언한다.
 
-**클라우드가 이 모듈을 그대로 import 한다.** 복사본을 만들지 말 것 — 갈라져도 테스트는
-통과하고 모델 정확도만 조용히 떨어진다(common.py 상단 주석). 이 코드는 이미 `_reference/`
-안에서만 네 번 복사된 이력이 있다.
+클라우드 피처와 학습·추론 계약은 `services/csi-fall-segmentation`이 담당한다.
+이 모듈은 Pi의 서브캐리어 선택·리샘플 계약과 구 모델 회귀 경로를 보존한다.
 """
 
 from __future__ import annotations
@@ -65,13 +65,14 @@ class FeatureConfig:
 
 @dataclass
 class WindowSignal:
-    """엣지가 클라우드로 올리는 것 — 서브캐리어 선택 + PCA 합성까지만 끝난 1-D 신호.
+    """엣지가 클라우드로 올리는 것 — 선택·리샘플된 30채널 창과 호환용 1-D 신호.
 
-    `signal` 은 `(window_samples,) float32` 로 fs=166.75 기준 500샘플 약 2KB 다.
-    S3(200,704B)+ACF(32,768B) 대비 117배 작다.
+    `amplitude`가 temporal segmentation 운영 입력이고 `signal`은 구 계약·진단
+    호환용이다.
     """
 
     signal: np.ndarray  # (window_samples,) float32
+    amplitude: np.ndarray  # (window_samples, selected_subcarrier_count) float32
     fs_hz: float
     window_samples: int
     window_span_s: float
@@ -167,6 +168,7 @@ def extract_window_signal(
     signal, pc_stats = select_pc_signal(window, selected_streams, w_radius=variance_radius)
     return WindowSignal(
         signal=signal,
+        amplitude=window.astype(np.float32, copy=False),
         fs_hz=fs_hz,
         window_samples=window_samples,
         window_span_s=span,

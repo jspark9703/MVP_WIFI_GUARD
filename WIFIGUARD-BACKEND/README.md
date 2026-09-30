@@ -24,24 +24,30 @@ MQTT로 들어온 엣지 데이터를 Kafka로 흘려 **저장·추론·드리�
                                                        model_retrain_dag
 ```
 
-> ## 현재 상태 (2026-09-10)
+> ## 현재 상태 (2026-09-29)
 >
 > **재실 경로가 관통한다.** 엣지 MQTT → 브리지 → Kafka → 인제스트 → TimescaleDB · 최신값 캐시
 > → REST(`ResidentOut` 런타임 필드) · WebSocket(`/ws/live`)까지 실측 검증했다.
 > 30초 재생에서 브리지 248건 전달·거부 0, `presence_samples` 118행 적재, 오류 0.
 >
 > **동작한다**: 서비스 API `/api/v1` 27경로 + `/ws/live` + JWT + 테넌시,
-> PostgreSQL(Alembic `0001`, 테이블 11개) + TimescaleDB(`presence_samples`),
-> 계약 5종(`packages/contracts/`), pytest **77개**.
+> PostgreSQL(Alembic `0002`, 테이블 11개) + TimescaleDB(`presence_samples`),
+> 계약(`packages/contracts/`), 백엔드, 추론·segmentation, 엣지, 프론트엔드 회귀 검증은
+> 루트의 `scripts/validate-repository.ps1`로 반복한다.
 > AWS EC2 2대(db·api) 배포 — [deploy/aws/README.md](deploy/aws/README.md).
 > **AWS 에는 아직 Kafka·MQTT 인스턴스가 없다**(M4). 설정이 없으면 인제스트는 꺼진 채로 뜨고
 > CRUD 는 정상 동작한다.
 >
-> **모델 실행 경로까지 구현됐다**: `services/csi-fall-pipeline`의 학습 체크포인트를
-> `services/inference`가 로드하고, Kafka `csi-feature-stream`의 1-D 대표신호를 학습과 동일한
-> ACF/CWT 피처로 변환해 `csi-inference-result`에 발행한다. 인제스트는 causal mode5 상태머신,
-> WebSocket 캐시, `fall_events(source="EDGE")` idempotent 저장, ntfy 알림 큐까지 연결한다.
-> 저장소에 없는 것은 실제 학습 가중치뿐이며, 인수 계약은 [docs/MODEL_HANDOFF.md](docs/MODEL_HANDOFF.md)다.
+> **현재 운영 후보 모델은 in-house temporal segmentation 모델이다**:
+> `services/csi-fall-segmentation`의 S3 + PCA-ACF 피처와 Dual ResNet18 체크포인트를
+> `services/inference`가 로드하고, MQTT `SignalMsg`의 `(960,30)` 진폭창을 500 samples로
+> 리샘플해 64-bin 확률과 causal A/B trigger를 계산한다. 인제스트, WebSocket 캐시,
+> `fall_events(source="EDGE")` 저장, 인증 REST API까지 실제 체크포인트로 소프트웨어 E2E를
+> 통과했다. CUDA 학습·파인튜닝과 MLflow 모델 버전 등록도 실제 실행했다. CPU/RAM/GPU/VRAM/
+> 디스크 실시간 모니터링과 AWS-neutral 용량 envelope를 포함한 결과는
+> [docs/INHOUSE_SEGMENTATION_E2E_AND_RESOURCES_KO.md](docs/INHOUSE_SEGMENTATION_E2E_AND_RESOURCES_KO.md)에 있다.
+> 전체 흐름과 검증 경계를 쉽게 설명한 공유용 문서는
+> [docs/PIPELINE_STATUS_SIMPLE.md](docs/PIPELINE_STATUS_SIMPLE.md)를 참고한다.
 >
 > **실행 대상이 아닌 파일**: `services/api/.../main.py`는 구 로컬 백엔드의 REST 19종 + `/ws/live`
 > 계약 원본으로 보존한 것이며, 엣지로 넘어간 모듈을 import하므로 import 자체가 불가능하다.
@@ -56,18 +62,19 @@ MQTT로 들어온 엣지 데이터를 Kafka로 흘려 **저장·추론·드리�
 | 하는 것 | 하지 않는 것 |
 |---|---|
 | MQTT 수신 → Kafka 라우팅 | CSI 수집·**재실감지** → 라즈베리파이 (네트워크와 무관하게 끊기지 않아야 함) |
-| 시계열·관계형 영속 저장 | **서브캐리어 선택·PCA 합성** → 라즈베리파이. 백엔드는 **1-D 대표신호를 받는다** |
-| **S3 스칼로그램 + PCA-ACF 변환** — 대표신호 → 텐서 | 펌웨어·하드웨어 제어 → ESP / Pi |
-| **낙상 DL 추론 서빙** — 텐서 → 확률 | UI 렌더링 → 프론트엔드 |
+| 시계열·관계형 영속 저장 | **학습 고정 규칙으로 서브캐리어 30개 선택·균일 리샘플** → 라즈베리파이 |
+| **S3 + PCA-ACF 변환** — `(T,30)` 진폭창 → temporal segmentation 입력 | 펌웨어·하드웨어 제어 → ESP / Pi |
+| **낙상 DL 추론 서빙** — 64-bin 확률 → exact-center 확률 → causal trigger | UI 렌더링 → 프론트엔드 |
 | 낙상 상태 판정 · `fall_events` 생성 · 알림 라우팅 | |
 | 서비스 API (REST + WS 팬아웃) · 인증 · 테넌시 | |
 | 드리프트 감지 · 재학습 오케스트레이션 · 모델 레지스트리 | |
 
-> **경계가 2026-09-10에 바뀌었다.** 이전 설계는 Pi가 S3(224,224)+PCA-ACF(1,128,64) 텐서
-> **233KB**를 만들어 올리는 것이었으나, 4Hz 기준 7.5Mbps/기기라 업링크로 성립하지 않았고
-> Pi 벤치 p90이 489ms로 250ms 스트라이드 예산도 넘겼다. 이제 절단점은
-> `select_pc_signal()`이며 Pi는 약 2KB만 올린다(117배 감소). CWT 변환 비용이 클라우드로
-> 옮겨왔으므로 **처리량이 이 서비스의 제약**이 된다 — 계획서 R1 참조.
+> temporal segmentation 모델 입력의 30채널은 Q-value 상위 30개가 아니다. 학습과
+> 동일하게 245개 complex pair에서
+> 0-based 121·122를 제외한 뒤 균등하게 30개를 고른다. Q-value는 선택된 30채널에서 CWT용
+> PCA 대표신호를 구성하는 내부 단계에 사용한다. Pi는 이 규칙으로 리샘플한 `(T,30) float32`
+> 진폭창을 보낸다. 320Hz·3초 기준 raw 115,200B, base64 약 153,600B이므로 다기기 운영 전에는
+> 업링크·브로커 용량 시험이 필요하다.
 
 ---
 
@@ -77,15 +84,16 @@ MQTT로 들어온 엣지 데이터를 Kafka로 흘려 **저장·추론·드리�
 deploy/aws/         EC2 부팅 스크립트 · SSM · systemd — 1차 클라우드 토폴로지  [db·api 기동됨]
 compose/            docker-compose.dev.yml (API·인제스트·선택 모델 포함) · obs.yml
 infra/              Mosquitto · PostgreSQL · TimescaleDB · 관측 설정
+monitoring/         검증 결과·AWS envelope 정적 용량 대시보드
 services/
   api/              FastAPI 서비스 계층 — app.py · routers/ 9종 · auth/        [동작]
     .../realtime/   /ws/live 팬아웃 + GET /realtime/schema                     [동작]
     .../main.py     구 로컬 백엔드 REST 19종 + /ws/live 계약 원본       [참조 전용 · import 불가]
   ingest/           MQTT→Kafka 브리지 · 컨슈머 · 최신값 캐시 · WS 허브          [동작]
                     라이브러리다 — 실행 주체는 api 의 lifespan (워커 1 고정)
-  model-serving/    구/신 체크포인트 호환 로더·추론 엔진                         [동작]
-  csi-fall-pipeline/ raw CSI→피처→학습→오프라인 예측 독립 패키지       [21 pass, 2 skip]
-  inference/        Kafka 신호→동일 피처→모델→InferenceResult                    [동작]
+  model-serving/    체크포인트 로더·배치 추론 엔진                                [동작]
+  csi-fall-segmentation/ S3+PCA-ACF·Dual ResNet18·학습/파인튜닝 패키지              [동작]
+  inference/        Kafka 진폭창→segmentation 모델→InferenceResult                 [동작]
   notification/     ntfy 비동기 큐·백오프; 확정 FALL 뒤 수신자별 호출             [동작]
   mqtt-bridge/      → ingest 로 통합됨 (README 참조)
   drift/ provisioning/                                                         [비어 있음]
@@ -97,8 +105,8 @@ packages/
     kafka.py        FeatureRecord · StatusRecord · InferenceResult
     realtime.py     /ws/live 프레임
     topics.py       MQTT·Kafka 토픽 조립·파싱
-  db/               SQLAlchemy 2 모델 11개 + Alembic 0001                      [동작]
-tools/              seed.py · export_openapi.py · smoke.sh · infer_validation.py
+  db/               SQLAlchemy 2 모델 11개 + Alembic 0002                      [동작]
+tools/              체크포인트·Kafka·MQTT·DB·API 검증 스크립트
 docs/               명세 문서
 _reference/         Window3BestModelInference (109MB) · dwt_analysis · collector-stride
 ```
@@ -172,60 +180,56 @@ curl -s localhost:8000/health | jq .ingest                     # 브리지·컨�
 ```bash
 cp compose/.env.example compose/.env    # 비밀번호를 실제 값으로 채울 것
 make up                                  # API·브로커·DB 전 스택(모델 제외)
-make model-up                            # weights/model.pt를 포함한 추론 E2E
+make model-up                            # temporal segmentation 체크포인트를 포함한 추론 E2E
+make model-check                         # 체크포인트 형식·피처·합성 추론 검증
+make model-e2e                           # 하드웨어 제외 소프트웨어 E2E 검증
 make obs                                 # + 관측 스택
 make ps / make logs / make down
 ```
 
 기존 `make replay` 대상은 없으며, 대신 루트 `scripts/validate-mock-storage.ps1`을 사용한다.
 
-compose 정적 해석(`docker compose ... config --quiet`)은 검증했다. 현재 작업 환경에서는 Docker
-Desktop 데몬이 꺼져 있어 컨테이너 기동 회귀는 수행하지 못했다. 가중치 인수 뒤에는
-`make model-check`, `make model-up`, `tools/validate_live_inference_kafka.py` 순서로 검증한다.
+compose 정적 해석과 컨테이너 기동을 검증했다. 실제 체크포인트로 MQTT→Kafka→피처→추론→
+인제스트→PostgreSQL→인증 REST API 소프트웨어 E2E가 통과했다. CUDA 학습·파인튜닝·MLflow와
+실시간 리소스 모니터링을 포함한 결과와 재현 방법은
+[docs/INHOUSE_SEGMENTATION_E2E_AND_RESOURCES_KO.md](docs/INHOUSE_SEGMENTATION_E2E_AND_RESOURCES_KO.md)를 따른다.
 
 ---
 
 ## 모델 계약
 
-운영 권장 체크포인트는 `csi-fall-pipeline` 형식이며, 현재 1-D 대표신호 와이어 계약에서는
-`feature=legacy_map`, `cwt=true`만 정확히 재현할 수 있다. 상세 인수 조건은
-[docs/MODEL_HANDOFF.md](docs/MODEL_HANDOFF.md)를 따른다. 아래 형식은 기존 체크포인트 호환 계약이다.
+운영 후보 체크포인트는 `services/csi-fall-segmentation`의 `S3 + PCA-ACF` temporal
+segmentation 형식이다. 상세 파일·해시·입력 조건은
+[docs/INHOUSE_SEGMENTATION_E2E_AND_RESOURCES_KO.md](docs/INHOUSE_SEGMENTATION_E2E_AND_RESOURCES_KO.md)를 따른다.
 
 ```
-입력 A: S3 스칼로그램   (224, 224)   float32
-입력 B: PCA-ACF        (1, 128, 64) float32
-정규화: 체크포인트 내 normalization{feature_a{mean,std}, feature_b{mean,std}}
-전처리: prepare_resnet_image — 1ch → 3ch 복제 → bilinear (224,224)
-모델:   DualBranchResNet(backbone=resnet18, embedding_dim=512,
-                         fusion_hidden_dim=512, dropout=0.3)
-        인코더 2개 독립(가중치 비공유) → concat 1024 → LayerNorm
-        → Linear(512) → ReLU → Dropout → Linear(2)
-출력:   softmax(logits, dim=1)[0, 1]     # class 1 = fall
+와이어 입력: 3초 × 320Hz × 30채널 진폭창, float32
+리샘플: 500 samples @ 166.6667Hz
+입력 A: CWT S3 이미지      (224, 224)
+입력 B: PCA-ACF 맵         (1, 128, 64)
+모델:   독립 ResNet-18 두 개 → temporal fusion → 64 bins
+출력:   sigmoid 64-bin probability → exact-center interpolation
+후처리: causal trigger B (A/B 비교 가능), fixed delay 1.5초
+임계값: 0.5
 ```
 
-`DualBranchResNet`은 **torchvision이 아니라 자체 구현 ResNet18**(BasicBlock 2-2-2-2)이다. 체크포인트 `model_config`에서 구조를 읽어 재구성한다.
-
-**검증 성능** (375 윈도우 / 낙상 24):
-
-| 설정 | Macro F1 | 낙상 Recall | TN/FP/FN/TP |
-|---|---:|---:|---|
-| 임계값 0.5 | 0.7926 | 0.6250 | 341/10/9/15 |
-| **임계값 0.468** | **0.8004** | **0.7083** | 338/13/7/17 |
-| 0.468 + mode5 | 0.8936 | 0.7500 | 348/3/6/18 |
-
-> 이 검증셋은 모델·임계값·후처리 선택에 사용되었으므로 **독립 테스트셋이 아니다.**
+제공된 77개 녹화는 모델 학습에 사용됐으므로 이번 실행은 구현 parity와 파이프라인 작동을 검증한다.
+독립 데이터 일반화나 의료기기 성능을 뜻하지 않는다.
 
 ## 세 축의 임계값 — 절대 섞지 말 것
 
 | 값 | 출처 | 척도 | UI 라벨 |
 |---|---|---|---|
-| `threshold` = **0.468** | 모델 (**여기**) | **확률** 0~1 | **"판정 임계값"** / "낙상 확률 임계값" |
+| `threshold` = **0.5** | segmentation 체크포인트 | **확률** 0~1 | **"판정 임계값"** / "낙상 확률 임계값" |
 | `presence_mv_threshold` | 캘리브레이션 (**Pi**) | MV 스케일, 기본 2.0 | "움직임 임계값" |
 | `wander_baseline` | 캘리브레이션 (**Pi**) | Welch PSD 스케일, 기본 0.5 | "재실 baseline" |
 
 ## 지연 예산
 
-현행 실측 **약 42ms/window** (피처 27ms + MPS 추론 15ms, 개발 PC). 백엔드에서는 피처를 Pi가 만들어 오므로 **추론만** 남지만 **엣지→클라우드 왕복이 더해진다.** 0.25초 stride 예산을 왕복 포함으로 다시 계산해야 한다 (명세 R3). CPU로 처리 가능한 수준이므로 **GPU는 동시 기기 수가 커진 뒤에 검토**한다.
+GPU steady-state benchmark에서 피처 중앙값 **34.535ms/window**, P95 **37.242ms/window**,
+모델 추론 중앙값 **2.720ms/window**를 관측했다. 첫 4-window 피처 배치는 CUDA/JIT warm-up을
+포함해 **5,479ms**였으므로 서비스 시작 시 warm-up이 필요하다. 이 값은 단일 개발 PC의 bounded
+측정이며 운영 SLA가 아니다. 다기기 처리량·MQTT 대역폭·장시간 soak는 별도 검증 대상이다.
 
 ---
 

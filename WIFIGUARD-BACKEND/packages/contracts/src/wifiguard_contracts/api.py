@@ -318,6 +318,8 @@ class RecipientOut(ApiModel):
     name: str
     role: RecipientRole
     phone: str | None = None
+    email: str | None = None
+    email_enabled: bool
     sms: bool
     push: bool
     ars: bool
@@ -335,6 +337,8 @@ class RecipientIn(ApiModel):
     name: str = Field(min_length=1, max_length=100)
     role: RecipientRole
     phone: str | None = Field(default=None, max_length=32)
+    email: str | None = Field(default=None, max_length=254)
+    email_enabled: bool = False
     sms: bool = False
     push: bool = False
     ars: bool = False
@@ -348,6 +352,8 @@ class RecipientPatch(ApiModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     role: RecipientRole | None = None
     phone: str | None = Field(default=None, max_length=32)
+    email: str | None = Field(default=None, max_length=254)
+    email_enabled: bool | None = None
     sms: bool | None = None
     push: bool | None = None
     ars: bool | None = None

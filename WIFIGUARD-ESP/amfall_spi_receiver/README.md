@@ -89,6 +89,20 @@ checked-in board overlay now fixes `CONFIG_WIFI_GUARD_SPI_BATCH_FRAMES=8` and
 contains no credential. Password-bearing sdkconfig files and build directories
 are ignored.
 
+For the replacement ESP32-C5-DevKitC-1 with an ESP32-C5-WROOM-1U 32 MB
+module, use the separate reviewed overlay. It keeps the same GPIO8/9/10/23/24
+SPI/READY contract and changes only the carrier description and detected flash
+size:
+
+```powershell
+idf.py -B build-devkitc1-wroom1u-n32 -D IDF_TARGET=esp32c5 `
+  -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.esp32-c5-devkitc1-wroom1u-n32.defaults;sdkconfig.private.defaults" build
+```
+
+The WROOM-1U variant requires a suitable external dual-band antenna on ANT1
+for reliable 2.4/5 GHz operation. The private credential overlay and full
+32 MB factory-flash backup remain local and must not be committed.
+
 ## Hardware evidence and remaining gates
 
 The validated paired path is ESP32-C5 receiver → WGSP v1 Batch8 → Raspberry Pi

@@ -61,7 +61,13 @@ class StatusRecord(_Receipt):
 
 
 # ── 추론 결과 (모델서버 → 백엔드) ─────────────────────────────────────
-PostProcess = Literal["none", "causal_mode5", "centered_mode5"]
+PostProcess = Literal[
+    "none",
+    "causal_mode5",
+    "centered_mode5",
+    "segmentation_a",
+    "segmentation_b",
+]
 """어느 후처리로 판정했는가. **반드시 데이터에 남긴다.**
 
 검증 실측(`_reference/.../outputs/summary.json`): threshold 0.468 단독은 fall_f1 0.630 / 오탐 13,
@@ -91,6 +97,10 @@ class InferenceResult(WireModel):
     proba_fall: float = Field(ge=0, le=1, description="softmax(logits)[1]. class 1 = fall")
     threshold: float = Field(ge=0, le=1, description="판정에 쓰인 임계값 (기본 0.468)")
     postprocess: PostProcess
+    decision: bool | None = Field(
+        default=None,
+        description="모델 패키지의 인과 후처리가 낸 최종 판정. none이면 백엔드가 후처리한다.",
+    )
 
     # 관측용 — 이 셋이 없으면 지연 문제를 사후에 진단할 수 없다
     inferred_at: datetime = Field(description="모델서버가 추론을 끝낸 시각")

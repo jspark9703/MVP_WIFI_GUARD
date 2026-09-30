@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    settings.validate_security()
     app = FastAPI(
         title="WIFI-GUARD API",
         version="0.1.0",
@@ -91,7 +92,7 @@ def create_app() -> FastAPI:
 
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(auth.router)
-    for name in ("facilities", "devices", "residents", "falls", "event_logs", "recipients", "config", "account"):
+    for name in ("facilities", "devices", "residents", "falls", "event_logs", "recipients", "config", "account", "training"):
         try:
             module = __import__(f"wifiguard_api.routers.{name}", fromlist=["router"])
         except ModuleNotFoundError:

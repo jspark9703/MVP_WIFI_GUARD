@@ -16,3 +16,11 @@ compose/.env
 # 로컬 데이터
 data/
 mlruns/
+
+# 로컬 실행 산출물. 작은 JSON 검증 요약은 재현 근거로 남기되 대용량 모델/시계열은 제외한다.
+artifacts/checkpoints/
+artifacts/resource-profiles/*.jsonl
+
+# 로컬 Data app 빌드/내보내기 결과
+monitoring/resource-capacity-dashboard/dist/
+monitoring/resource-capacity-dashboard/.data-app-offline/

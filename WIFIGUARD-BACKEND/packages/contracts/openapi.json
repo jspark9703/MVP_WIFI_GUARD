@@ -1204,6 +1204,23 @@
             "title": "Ars",
             "type": "boolean"
           },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "emailEnabled": {
+            "default": false,
+            "title": "Emailenabled",
+            "type": "boolean"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -1300,6 +1317,21 @@
             "format": "date-time",
             "title": "Createdat",
             "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "emailEnabled": {
+            "title": "Emailenabled",
+            "type": "boolean"
           },
           "enabled": {
             "title": "Enabled",
@@ -1410,6 +1442,7 @@
           "id",
           "name",
           "role",
+          "emailEnabled",
           "sms",
           "push",
           "ars",
@@ -1437,6 +1470,29 @@
             "default": false,
             "title": "Clearresident",
             "type": "boolean"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "emailEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emailenabled"
           },
           "enabled": {
             "anyOf": [
@@ -4455,6 +4511,7 @@
     },
     "/api/v1/recipients/{recipient_id}/test": {
       "post": {
+        "description": "Synchronously verify every configured channel for one recipient.",
         "operationId": "test_recipient_api_v1_recipients__recipient_id__test_post",
         "parameters": [
           {
@@ -4472,7 +4529,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Test Recipient Api V1 Recipients  Recipient Id  Test Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -4517,7 +4578,7 @@
             },
             "description": "Validation Error"
           },
-          "501": {
+          "502": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4525,7 +4586,7 @@
                 }
               }
             },
-            "description": "Not Implemented"
+            "description": "Bad Gateway"
           }
         },
         "security": [
@@ -4903,6 +4964,62 @@
         "summary": "Patch Resident",
         "tags": [
           "residents"
+        ]
+      }
+    },
+    "/api/v1/training/status": {
+      "get": {
+        "operationId": "training_status_api_v1_training_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Training Status Api V1 Training Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Training Status",
+        "tags": [
+          "training"
+        ]
+      }
+    },
+    "/api/v1/training/validate": {
+      "post": {
+        "operationId": "validate_training_pipeline_api_v1_training_validate_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Validate Training Pipeline Api V1 Training Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Validate Training Pipeline",
+        "tags": [
+          "training"
         ]
       }
     },

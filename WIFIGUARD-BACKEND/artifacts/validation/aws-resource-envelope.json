@@ -1,0 +1,30 @@
+{
+  "status": "estimated",
+  "observed_local": {
+    "peak_cpu_cores": 1.48,
+    "peak_process_memory_gib": 1.4824638366699219,
+    "peak_gpu_memory_delta_gib": 0.76171875,
+    "peak_gpu_utilization_percent": 40.0,
+    "dataset_gib": 0.727853543125093,
+    "checkpoint_gib": 0.08711579721421003
+  },
+  "aws_capacity_envelope": {
+    "vcpu": 3,
+    "ram_gib": 4,
+    "gpu_vram_gib": 2,
+    "persistent_storage_gib": 10
+  },
+  "headroom_multiplier": 1.5,
+  "retained_checkpoints": 10,
+  "interpretation": {
+    "training": "Choose an EC2/SageMaker GPU node meeting or exceeding all four envelope fields.",
+    "inference": "Benchmark separately at target device concurrency before right-sizing autoscaling.",
+    "storage": "Envelope includes dataset plus retained checkpoints, not logs, backups, or Kafka retention.",
+    "cost": "No price claim is made; instance and storage prices must be checked for the deployment region."
+  },
+  "limitations": [
+    "GPU numbers are host-level deltas and may include overlap with other GPU workloads.",
+    "One bounded local run does not establish production concurrency or tail latency.",
+    "Bundled recordings were used in training and do not validate model generalization."
+  ]
+}

@@ -12,8 +12,9 @@ MQTT 토픽 구조 (명세 backend §7.1)::
 - ``device`` : 기기 UUID 문자열
 - ``leaf``   : presence | telemetry | signal | cmd | ack
 
-``window`` leaf 는 존재하지 않는다. 233KB 텐서를 엣지가 올리던 설계(4Hz 기준 7.5Mbps/기기)는
-D1 로 폐기되었고, 엣지는 1-D 합성 대표신호를 ``signal`` 로 올린다 (mqtt.SignalMsg 참조).
+``window`` leaf 는 존재하지 않는다. ACF-derivative 모델에 필요한 선택된 30채널
+진폭 창은 1-D 호환 신호와 함께 ``signal`` 페이로드에 싣는다. 실제 모델 입력은
+``SignalMsg.amplitude_*``이며, 1-D ``signal_b64``는 진단과 구 계약 호환을 위해 유지한다.
 """
 
 from __future__ import annotations

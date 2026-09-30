@@ -16,7 +16,7 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2.0
     ports:
-      - "1883:1883"   # 로컬 개발은 평문. 운영 mTLS 8883은 IoT Core가 담당
+      - "${MQTT_HOST_PORT:-1883}:1883"   # 로컬 개발은 평문. 운영 mTLS 8883은 IoT Core가 담당
       - "9001:9001"
     volumes:
       - ../infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
@@ -30,49 +30,51 @@ services:
 
   # ── 스트림 ────────────────────────────────────────────────────────
   kafka:
-    image: bitnami/kafka:3.9
+    image: apache/kafka:3.9.1
     ports:
       - "9092:9092"
     environment:
       # KRaft 모드 — zookeeper 불필요
-      KAFKA_CFG_NODE_ID: "0"
-      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
-      KAFKA_CFG_LISTENERS: "INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093"
-      KAFKA_CFG_ADVERTISED_LISTENERS: "INTERNAL://kafka:29092,EXTERNAL://localhost:9092"
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
-      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "INTERNAL"
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"   # 토픽은 infra/kafka/ 정의로 명시 생성
+      KAFKA_NODE_ID: "0"
+      KAFKA_PROCESS_ROLES: "controller,broker"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      KAFKA_LISTENERS: "INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:29092,EXTERNAL://localhost:9092"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # 토픽은 infra/kafka/ 정의로 명시 생성
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
     volumes:
-      - kafka-data:/bitnami/kafka
+      - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
       interval: 5s
       timeout: 5s
       retries: 24
       start_period: 10s
 
   kafka-init:
-    image: bitnami/kafka:3.9
+    image: apache/kafka:3.9.1
     depends_on:
       kafka:
         condition: service_healthy
     restart: "no"
     command: >
       bash -ec '
-      until /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list; do sleep 2; done;
-      for topic in csi-feature-stream csi-telemetry csi-inference-result; do
-        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092
-        --create --if-not-exists --topic $$topic --partitions 3 --replication-factor 1;
-      done'
+      until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list; do sleep 2; done;
+      for topic in csi-feature-stream csi-telemetry csi-inference-result; do /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --create --if-not-exists --topic $$topic --partitions 3 --replication-factor 1; done'
 
   # ── 저장 ──────────────────────────────────────────────────────────
   # 이원화: 고빈도 시계열은 TimescaleDB, 관계형은 PostgreSQL (명세 §4 Phase 1-1)
   timescaledb:
     image: timescale/timescaledb:2.17.2-pg16
     ports:
-      - "5433:5432"
+      - "${TSDB_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: "${TSDB_NAME:-wifiguard_ts}"
       POSTGRES_USER: "${TSDB_USER:-wifiguard}"
@@ -89,7 +91,7 @@ services:
   postgres:
     image: postgres:16
     ports:
-      - "5432:5432"
+      - "${PG_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: "${PG_NAME:-wifiguard}"
       POSTGRES_USER: "${PG_USER:-wifiguard}"
@@ -114,7 +116,7 @@ services:
   # ── 오브젝트 스토리지 (모델 아티팩트 · CSI/피처 윈도우) ─────────────
   # window(피처)는 232KB/윈도우다. TimescaleDB에 넣지 않고 여기 두고 DB에는 포인터만.
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"
@@ -124,31 +126,52 @@ services:
       MINIO_ROOT_PASSWORD: "${MINIO_PASSWORD:?set in .env}"
     volumes:
       - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # SMTP 개발 수신함. 이메일은 외부로 나가지 않고 http://localhost:8025 에서 확인한다.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   # ── 모델 레지스트리 ────────────────────────────────────────────────
-  # ⚠ MLflow는 이 프로젝트 어디에서도 실제로 쓰인 적이 없다. 완전한 신규 도입이다 (명세 R7).
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.19.0
+    build:
+      context: ..
+      dockerfile: infra/mlflow/Dockerfile
+    image: wifiguard/mlflow:2.19.0-postgres
     command: >
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri postgresql://${PG_USER:-wifiguard}:${PG_PASSWORD}@postgres:5432/mlflow
-      --artifacts-destination s3://mlflow
+      --artifacts-destination /mlartifacts
     ports:
       - "5000:5000"
-    environment:
-      MLFLOW_S3_ENDPOINT_URL: "http://minio:9000"
-      AWS_ACCESS_KEY_ID: "${MINIO_USER:-minioadmin}"
-      AWS_SECRET_ACCESS_KEY: "${MINIO_PASSWORD}"
+    volumes:
+      - mlflow-artifacts:/mlartifacts
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   api:
     build:
       context: ..
       dockerfile: services/api/Dockerfile
     ports:
-      - "8000:8000"
+      - "${API_HOST_PORT:-8000}:8000"
     environment:
       DATABASE_URL: "postgresql+psycopg://${PG_USER:-wifiguard}:${PG_PASSWORD}@postgres:5432/${PG_NAME:-wifiguard}"
       TSDB_DSN: "postgresql://${TSDB_USER:-wifiguard}:${TSDB_PASSWORD}@timescaledb:5432/${TSDB_NAME:-wifiguard_ts}"
@@ -158,6 +181,16 @@ services:
       KAFKA_BOOTSTRAP: "kafka:29092"
       JWT_SECRET: "${JWT_SECRET:?set in .env}"
       ALLOW_FALL_SIMULATE: "${ALLOW_FALL_SIMULATE:-0}"
+      SMTP_HOST: "${SMTP_HOST:-mailpit}"
+      SMTP_PORT: "${SMTP_PORT:-1025}"
+      SMTP_USERNAME: "${SMTP_USERNAME:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-alerts@wifiguard.local}"
+      SMTP_STARTTLS: "${SMTP_STARTTLS:-0}"
+      MLFLOW_TRACKING_URI: "${MLFLOW_TRACKING_URI:-http://mlflow:5000}"
+      TRAINING_ARTIFACTS_DIR: /app/artifacts/validation
+    volumes:
+      - ../artifacts/validation:/app/artifacts/validation:ro
     command: >
       sh -ec 'alembic -c /app/packages/db/alembic.ini upgrade head &&
       uvicorn wifiguard_api.app:app --host 0.0.0.0 --port 8000 --workers 1'
@@ -170,6 +203,8 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
     restart: "on-failure:5"
 
   inference:
@@ -183,8 +218,40 @@ services:
       MODEL_CHECKPOINT: /models/model.pt
       MODEL_DEVICE: "${MODEL_DEVICE:-cpu}"
       MODEL_THRESHOLD: "${MODEL_THRESHOLD:-}"
+      MODEL_POSTPROCESS: "${MODEL_POSTPROCESS:-b}"
+      INFERENCE_BATCH_SIZE: "${INFERENCE_BATCH_SIZE:-4}"
+      INFERENCE_BATCH_WAIT_MS: "${INFERENCE_BATCH_WAIT_MS:-300}"
     volumes:
-      - "${MODEL_CHECKPOINT_HOST:-../weights/model.pt}:/models/model.pt:ro"
+      - "${MODEL_CHECKPOINT_HOST:-../weights/temporal_segmentation_fixed_delay.pt}:/models/model.pt:ro"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "on-failure:5"
+
+  inference-gpu:
+    profiles: ["gpu"]
+    build:
+      context: ../..
+      dockerfile: WIFIGUARD-BACKEND/services/inference/Dockerfile.cuda
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:29092"
+      KAFKA_INFERENCE_GROUP: "wifiguard-inference-gpu-v1"
+      MODEL_CHECKPOINT: /models/model.pt
+      MODEL_DEVICE: cuda
+      MODEL_THRESHOLD: "${MODEL_THRESHOLD:-}"
+      MODEL_POSTPROCESS: "${MODEL_POSTPROCESS:-b}"
+      INFERENCE_BATCH_SIZE: "${INFERENCE_BATCH_SIZE:-4}"
+      INFERENCE_BATCH_WAIT_MS: "${INFERENCE_BATCH_WAIT_MS:-300}"
+      SSQ_GPU: "1"
+    volumes:
+      - "${MODEL_CHECKPOINT_HOST:-../weights/temporal_segmentation_fixed_delay.pt}:/models/model.pt:ro"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -197,6 +264,7 @@ volumes:
   postgres-data:
   redis-data:
   minio-data:
+  mlflow-artifacts:
 
 # 관측 스택(prometheus/grafana/alertmanager/loki)은 compose/docker-compose.obs.yml 로 분리.
 # Airflow는 재학습 루프(Phase 6)에 들어갈 때 추가한다 — 지금 띄워도 돌릴 DAG가 없다.

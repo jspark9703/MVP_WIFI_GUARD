@@ -1181,6 +1181,7 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
     { name = "wifiguard-contracts" },
     { name = "wifiguard-db" },
+    { name = "wifiguard-notify" },
 ]
 
 [package.metadata]
@@ -1193,6 +1194,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "wifiguard-contracts", editable = "packages/contracts" },
     { name = "wifiguard-db", editable = "packages/db" },
+    { name = "wifiguard-notify", editable = "services/notification" },
 ]
 
 [[package]]

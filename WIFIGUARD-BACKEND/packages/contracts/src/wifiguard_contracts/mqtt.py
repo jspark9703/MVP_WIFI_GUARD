@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 if TYPE_CHECKING:  # numpy 는 신호를 실제로 인코드/디코드하는 쪽(엣지·모델서버)에만 필요하다.
     import numpy as np  # pragma: no cover
@@ -107,9 +107,10 @@ PRESENCE_STATUS_FIELDS: tuple[str, ...] = (
 class SignalMsg(_Envelope):
     """`wifiguard/{tenant}/{device}/signal` — 게이트 개방 시 4Hz.
 
-    엣지가 `select_pc_signal()`(features/common.py:52-93)까지만 계산해 그 1-D 반환값을 싣는다.
-    S3 스칼로그램과 PCA-ACF 변환은 **클라우드 모델서버**가
-    `features_from_signal()` 로 수행한다 (D1).
+    `signal_b64` 는 기존 파이프라인과 진단 호환성을 위해 유지한다. `amplitude_b64` 는
+    ACF-derivative 모델이 요구하는 균일 리샘플된 ``(T, 30)`` 진폭 창이다. 이 모델의
+    서브캐리어 평균 lag-product는 1-D PCA 신호에서 복원할 수 없으므로, 새 추론 경로는
+    amplitude 세 필드가 모두 있는 메시지만 처리한다.
 
     인코딩이 float32 raw base64 인 근거 — **양자화하면 안 된다**:
         이 신호는 클라우드에서 `q_metric(signal, 0.4*fs)`(common.py:266)을 거치고,
@@ -124,7 +125,9 @@ class SignalMsg(_Envelope):
         Pi·클라우드 양쪽에 의존이 늘고 `kafka-console-consumer` 로 눈으로 볼 수 없게 된다.
         정당화되는 임계는 대략 기기 100대이고, 그때는 `encoding` 값만 늘리면 된다.
 
-    크기: fs=166.75 → T=500 → raw 2,000B → b64 2,668B → JSON 전체 약 3.0KB → 4Hz 시 96kbps/기기.
+    amplitude 크기: fs=320, T=960, C=30 → raw 115,200B → b64 153,600B
+    → 4Hz 시 약 4.9Mbps/기기. MQTT/Kafka 기본 단일 메시지 제한에는 들어가지만,
+    다기기 운영 전 압축 또는 엣지 피처화 검토가 필요하다.
     """
 
     kind: Literal["signal"] = "signal"
@@ -132,6 +135,12 @@ class SignalMsg(_Envelope):
     encoding: SignalEncoding = "f32le_b64"
     signal_b64: str = Field(min_length=1)
     signal_len: int = Field(gt=0, description="디코드 후 샘플 수. 위조·절단 검증용")
+    amplitude_b64: str | None = Field(
+        default=None,
+        description="선택·리샘플된 float32 (rows, cols) 진폭 창. temporal segmentation 모델 입력",
+    )
+    amplitude_rows: int | None = Field(default=None, gt=0)
+    amplitude_cols: int | None = Field(default=None, gt=0)
     fs_hz: float = Field(gt=0, description="0.25Hz 격자로 양자화된 값 (realtime.py:117-118)")
     window_samples: int = Field(gt=0)
     window_span_s: float = Field(gt=0, description="실제 관측 span = times[-1]-times[0]")
@@ -153,6 +162,33 @@ class SignalMsg(_Envelope):
     def decode(self) -> "np.ndarray":
         """`signal_b64` → `(signal_len,) float32`. 길이가 어긋나면 ValueError. numpy 필요."""
         return decode_signal(self.signal_b64, self.signal_len, self.encoding)
+
+    def decode_amplitude(self) -> "np.ndarray":
+        """``amplitude_b64`` → ``(rows, cols) float32``. 누락·절단은 ValueError."""
+        if self.amplitude_b64 is None or self.amplitude_rows is None or self.amplitude_cols is None:
+            raise ValueError(
+                "temporal segmentation 추론에는 "
+                "amplitude_b64/amplitude_rows/amplitude_cols가 필요하다"
+            )
+        return decode_amplitude(
+            self.amplitude_b64,
+            self.amplitude_rows,
+            self.amplitude_cols,
+            self.encoding,
+        )
+
+    @model_validator(mode="after")
+    def _amplitude_fields_are_all_or_none(self) -> "SignalMsg":
+        supplied = (
+            self.amplitude_b64 is not None,
+            self.amplitude_rows is not None,
+            self.amplitude_cols is not None,
+        )
+        if any(supplied) and not all(supplied):
+            raise ValueError(
+                "amplitude_b64, amplitude_rows, amplitude_cols는 모두 함께 제공해야 한다"
+            )
+        return self
 
 
 def encode_signal(signal: "np.ndarray", encoding: SignalEncoding = "f32le_b64") -> str:
@@ -176,6 +212,36 @@ def decode_signal(signal_b64: str, signal_len: int, encoding: SignalEncoding = "
     if arr.size != signal_len:
         raise ValueError(f"신호 길이 불일치: 디코드 {arr.size} != 선언 {signal_len}")
     return np.array(arr, dtype=np.float32)  # 쓰기 가능한 사본 (frombuffer 는 읽기 전용)
+
+
+def encode_amplitude(amplitude: "np.ndarray", encoding: SignalEncoding = "f32le_b64") -> str:
+    """``(time, 30)`` 진폭 창을 float32 little-endian base64로 무손실 인코딩한다."""
+    import numpy as np
+
+    if encoding != "f32le_b64":
+        raise ValueError(f"지원하지 않는 인코딩: {encoding}")
+    arr = np.ascontiguousarray(amplitude, dtype="<f4")
+    if arr.ndim != 2:
+        raise ValueError(f"2-D 진폭 창이어야 한다: shape={arr.shape}")
+    return base64.b64encode(arr.tobytes()).decode("ascii")
+
+
+def decode_amplitude(
+    amplitude_b64: str,
+    rows: int,
+    cols: int,
+    encoding: SignalEncoding = "f32le_b64",
+) -> "np.ndarray":
+    """무손실 base64 진폭 창을 ``(rows, cols) float32``로 복원한다."""
+    import numpy as np
+
+    if encoding != "f32le_b64":
+        raise ValueError(f"지원하지 않는 인코딩: {encoding}")
+    arr = np.frombuffer(base64.b64decode(amplitude_b64), dtype="<f4")
+    expected = rows * cols
+    if arr.size != expected:
+        raise ValueError(f"진폭 길이 불일치: 디코드 {arr.size} != 선언 {rows}x{cols}")
+    return np.array(arr.reshape(rows, cols), dtype=np.float32)
 
 
 # ── telemetry ───────────────────────────────────────────────────────
@@ -291,6 +357,8 @@ __all__ = [
     "TransportKind",
     "UplinkMsg",
     "WireModel",
+    "decode_amplitude",
     "decode_signal",
+    "encode_amplitude",
     "encode_signal",
 ]

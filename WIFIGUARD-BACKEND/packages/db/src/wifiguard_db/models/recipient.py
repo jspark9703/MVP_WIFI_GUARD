@@ -24,6 +24,8 @@ class Recipient(TimestampMixin, ScopeMixin, Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(Text, nullable=False)
     phone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     sms: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     push: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     ars: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))

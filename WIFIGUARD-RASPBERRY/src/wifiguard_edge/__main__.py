@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 import threading
@@ -38,6 +39,7 @@ from .transport.base import create_source
 log = logging.getLogger("wifiguard_edge")
 
 EDGE_VERSION = "0.1.0"
+HEALTH_REFRESH_SECONDS = 5.0
 
 
 class EdgeApp:
@@ -50,6 +52,8 @@ class EdgeApp:
         self._stop = threading.Event()
         self._seq = 0
         self._seq_lock = threading.Lock()
+        health_file = os.getenv("HEALTH_FILE", "").strip()
+        self._health_file = Path(health_file) if health_file else None
 
         self.ring = RingBuffer(max_seconds=30.0)
         self.gate = SignalGate(
@@ -248,13 +252,41 @@ class EdgeApp:
         self.publisher.stop()    # 마지막 — 종료 직전 큐를 비울 기회를 준다
         log.info("정지 완료: %s", self.publisher.status())
 
+    def _refresh_health(self) -> None:
+        """Refresh the inherited container heartbeat only while core loops live."""
+        if self._health_file is None:
+            return
+        healthy = (
+            self.source.running
+            and self.presence.is_alive()
+            and self.features.is_alive()
+            and self._telemetry_thread.is_alive()
+        )
+        if healthy:
+            self._health_file.parent.mkdir(parents=True, exist_ok=True)
+            self._health_file.touch()
+        else:
+            self._health_file.unlink(missing_ok=True)
+
+    def _clear_health(self) -> None:
+        if self._health_file is not None:
+            self._health_file.unlink(missing_ok=True)
+
     def run_forever(self) -> None:
         self.start()
+        next_health = 0.0
         try:
             while not self._stop.is_set():
+                now = time.monotonic()
+                if now >= next_health:
+                    self._refresh_health()
+                    next_health = now + HEALTH_REFRESH_SECONDS
                 time.sleep(0.2)
         finally:
-            self.stop()
+            try:
+                self.stop()
+            finally:
+                self._clear_health()
 
 
 def _loop_stats(status: dict[str, Any]) -> dict[str, Any]:

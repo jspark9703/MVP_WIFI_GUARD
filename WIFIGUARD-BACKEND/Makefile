@@ -7,19 +7,31 @@ COMPOSE     := docker compose -f compose/docker-compose.dev.yml --env-file compo
 COMPOSE_OBS := $(COMPOSE) -f compose/docker-compose.obs.yml
 ALEMBIC     := uv run alembic -c packages/db/alembic.ini
 
-.PHONY: up model-up model-check down logs ps obs migrate migrate-down seed api openapi test replay clean
+.PHONY: up model-up model-gpu-up model-check model-e2e down logs ps obs monitor-host resource-estimate migrate migrate-down seed api openapi test replay clean
 
 up:              ## 미들웨어 전 스택 기동
 	$(COMPOSE) up -d
 
-model-up:        ## 외부 주입된 weights/model.pt를 포함한 전체 E2E 기동
+model-up:        ## 외부 주입된 temporal segmentation checkpoint를 포함한 전체 E2E 기동
 	$(COMPOSE) --profile model up -d
 
+model-gpu-up:    ## CUDA CWT + 모델 추론(실시간 4Hz 검증 경로)
+	$(COMPOSE) --profile gpu up -d
+
 model-check:     ## Kafka 없이 체크포인트 형식·피처·추론 1회를 검증
-	uv run --project services/inference python tools/validate_model_checkpoint.py weights/model.pt
+	uv run --project services/inference python tools/validate_model_checkpoint.py weights/temporal_segmentation_fixed_delay.pt
+
+model-e2e:       ## 하드웨어 없이 MQTT→실제모델→DB→API 소프트웨어 E2E 검증
+	uv run python tools/validate_model_software_e2e.py --mqtt-port $${MQTT_HOST_PORT:-1883}
 
 obs:             ## 관측 스택까지 함께 기동
 	$(COMPOSE_OBS) up -d
+
+monitor-host:    ## 호스트 CPU·RAM·GPU·VRAM·디스크 실시간 모니터(http://127.0.0.1:9108)
+	uv run python tools/resource_monitor.py --host 0.0.0.0 --port 9108 --interval 1 --output artifacts/resource-profiles/live-monitor.jsonl
+
+resource-estimate: ## 검증 profile로 AWS 시작 용량 envelope 재계산
+	uv run python tools/estimate_aws_resources.py --profiles artifacts/resource-profiles/inference-gpu.json artifacts/resource-profiles/training-smoke.json artifacts/resource-profiles/finetune-smoke.json --dataset-registry artifacts/validation/dataset-registry.json --headroom 1.5 --retained-checkpoints 10 --output artifacts/validation/aws-resource-envelope.json
 
 down:
 	$(COMPOSE) down

@@ -1,0 +1,17 @@
+{
+  "name": "InhouseSegmentationRealtime",
+  "archive_sha256": "5f8a4590a4b6acd04e4f8ecc7370a33d7ac640e4e6f243a0f2d67d9d85454937",
+  "checkpoint_relative_path": "weights/temporal_segmentation_fixed_delay.pt",
+  "checkpoint_sha256": "7cb0b7436f0bc7f93b69e6c39678ebc5a31c707e2777244ec7973a9ecfa68a41",
+  "checkpoint_bytes": 93539875,
+  "feature_recordings": 77,
+  "feature_windows": 15320,
+  "training_data_disclosure": "The bundled 77 recordings were used for training; they validate execution, not external generalization.",
+  "runtime_contract": {
+    "edge_input": "3 second float32 amplitude window, shape (960, 30), 320 Hz",
+    "model_input": "3 second float32 amplitude window, shape (500, 30), 166.6667 Hz",
+    "output": "64-bin sigmoid segmentation; exact-center probability by interpolation",
+    "fixed_delay_seconds": 1.5,
+    "default_postprocess": "segmentation_b"
+  }
+}

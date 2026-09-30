@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from wifiguard_contracts import topics
 from wifiguard_contracts.kafka import FeatureRecord, InferenceResult
-from wifiguard_contracts.mqtt import PresenceMsg, SignalMsg, encode_signal
+from wifiguard_contracts.mqtt import PresenceMsg, SignalMsg, encode_amplitude, encode_signal
 
 from wifiguard_inference.settings import InferenceSettings
 from wifiguard_inference.worker import InferenceWorker
@@ -23,11 +23,12 @@ class FakeBuilder:
     def start(self) -> None:
         self.started = True
 
-    def build(self, signal, fs_hz):
-        self.seen.append((signal, fs_hz))
+    def build_batch(self, amplitudes, fs_hz):
+        self.seen.extend((amplitude, fs_hz) for amplitude in amplitudes)
+        count = len(amplitudes)
         return SimpleNamespace(
-            s3=np.zeros((224, 224), np.float32),
-            acf=np.zeros((1, 128, 64), np.float32),
+            s3=np.zeros((count, 224, 224), np.float32),
+            acf=np.zeros((count, 1, 128, 64), np.float32),
         )
 
 
@@ -37,10 +38,10 @@ class FakeEngine:
 
     def warmup(self): ...
 
-    def predict(self, s3, acf):
-        assert s3.shape == (224, 224)
-        assert acf.shape == (1, 128, 64)
-        return 0.875
+    def predict_batch(self, s3, acf):
+        assert s3.shape[1:] == (224, 224)
+        assert acf.shape[1:] == (1, 128, 64)
+        return np.full(len(s3), 0.875, dtype=np.float32)
 
 
 class FakeFuture:
@@ -88,6 +89,7 @@ def feature_record(message) -> bytes:
 
 def signal_message():
     signal = np.linspace(-1, 1, 500, dtype=np.float32)
+    amplitude = np.arange(960 * 30, dtype=np.float32).reshape(960, 30)
     return SignalMsg(
         device_id=uuid4(),
         tenant_id=f"home-{uuid4()}",
@@ -95,8 +97,11 @@ def signal_message():
         seq=7,
         signal_b64=encode_signal(signal),
         signal_len=len(signal),
-        fs_hz=166.75,
-        window_samples=500,
+        amplitude_b64=encode_amplitude(amplitude),
+        amplitude_rows=960,
+        amplitude_cols=30,
+        fs_hz=320.0,
+        window_samples=960,
         window_span_s=3.0,
         selected_subcarrier_count=30,
         selected_stream_count=10,
@@ -126,9 +131,10 @@ def test_signal_is_transformed_inferred_and_published_once():
     result = InferenceResult.model_validate_json(value)
     assert result.proba_fall == 0.875
     assert result.threshold == 0.47
-    assert result.postprocess == "none"
+    assert result.postprocess == "segmentation_b"
+    assert result.decision is False
     assert result.model_version == "fake:test"
-    assert builder.seen[0][0].shape == (500,)
+    assert builder.seen[0][0].shape == (960, 30)
     assert worker.status()["counts"]["duplicates"] == 1
 
 
@@ -197,3 +203,29 @@ def test_malformed_record_is_rejected_without_infinite_retry():
 
     assert worker.handle(topics.KAFKA_FEATURE_STREAM, b"not-json") is True
     assert worker.status()["counts"]["errors"] == 1
+
+
+def test_old_signal_without_amplitude_is_acknowledged_as_incompatible():
+    producer, builder = FakeProducer(), FakeBuilder()
+    worker = InferenceWorker(settings(), engine=FakeEngine(), feature_builder=builder)
+    worker._producer = producer
+    msg = signal_message().model_copy(
+        update={"amplitude_b64": None, "amplitude_rows": None, "amplitude_cols": None}
+    )
+
+    assert worker.handle(topics.KAFKA_FEATURE_STREAM, feature_record(msg)) is True
+    assert builder.seen == [] and producer.sent == []
+    assert worker.status()["counts"]["incompatible"] == 1
+
+
+def test_four_records_are_transformed_as_one_batch():
+    producer, builder = FakeProducer(), FakeBuilder()
+    worker = InferenceWorker(settings(), engine=FakeEngine(), feature_builder=builder)
+    worker._producer = producer
+    messages = [signal_message().model_copy(update={"seq": seq}) for seq in range(4)]
+    values = [(topics.KAFKA_FEATURE_STREAM, feature_record(msg)) for msg in messages]
+
+    assert worker.handle_batch(values)
+    assert len(builder.seen) == 4
+    assert len(producer.sent) == 4
+    assert worker.status()["counts"]["batches"] == 1

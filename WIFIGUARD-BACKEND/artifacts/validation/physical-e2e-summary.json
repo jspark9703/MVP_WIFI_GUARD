@@ -1,0 +1,37 @@
+{
+  "schema": "wifiguard-physical-e2e-summary-v1",
+  "status": "passed_with_acceptance_exclusions",
+  "hardware_exercised": true,
+  "acquisition": {
+    "spi_frames": 19268,
+    "observed_source_rate_hz": 320.0144080122687,
+    "source_sequence_gap_frames": 5,
+    "mqtt_publications": 168,
+    "transport_errors": 0
+  },
+  "pipeline_observation": {
+    "feature_records": 1246,
+    "presence_records": 1092,
+    "signal_records": 154,
+    "inference_results": 154,
+    "missing_inference_results": 0,
+    "unmatched_inference_results": 0,
+    "duplicate_inference_results": 0,
+    "fall_decisions_true": 0,
+    "fall_decisions_false": 154,
+    "maximum_fall_probability": 4.98e-06,
+    "mean_inference_ms": 37.79,
+    "maximum_inference_ms": 121.99,
+    "kafka_lag_at_end": 0,
+    "timescale_presence_persisted": true
+  },
+  "network_modes_exercised": [
+    "ethernet",
+    "wifi"
+  ],
+  "not_proven": [
+    "accuracy on real fall and non-fall CSI recordings",
+    "long-duration hardware soak and fault injection",
+    "production AWS load and cost"
+  ]
+}

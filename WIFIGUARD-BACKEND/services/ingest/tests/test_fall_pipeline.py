@@ -87,3 +87,16 @@ def test_devices_have_independent_vote_histories():
     update = manager.apply(result(second, "tenant", 0, 0.9, base))
     assert update.fields["detect_state"] == "SUSPECT"
     assert update.fields["fall_count"] == 0
+
+
+def test_segmentation_trigger_is_not_filtered_a_second_time():
+    device_id = uuid4()
+    base = datetime.now(UTC)
+    payload = result(device_id, "tenant", 1, 0.4, base).model_copy(
+        update={"postprocess": "segmentation_b", "decision": True}
+    )
+    update = FallStateManager().apply(payload)
+    assert update is not None
+    assert update.new_fall is True
+    assert update.fields["detect_state"] == "FALL"
+    assert update.fields["postprocess"] == "segmentation_b"

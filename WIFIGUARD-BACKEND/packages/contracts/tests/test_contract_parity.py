@@ -116,6 +116,28 @@ def test_signal_payload_size_is_as_designed():
     assert len(base64.b64decode(encoded)) == 2000
 
 
+def test_amplitude_roundtrip_is_bit_exact():
+    np = pytest.importorskip("numpy")
+    original = np.random.default_rng(1).standard_normal((960, 30)).astype(np.float32)
+    encoded = mqtt.encode_amplitude(original)
+    decoded = mqtt.decode_amplitude(encoded, 960, 30)
+    assert np.array_equal(decoded, original)
+    assert decoded.dtype == np.float32
+    assert len(base64.b64decode(encoded)) == 115_200
+
+
+def test_amplitude_length_mismatch_is_rejected():
+    np = pytest.importorskip("numpy")
+    encoded = mqtt.encode_amplitude(np.zeros((10, 30), dtype=np.float32))
+    with pytest.raises(ValueError, match="진폭 길이 불일치"):
+        mqtt.decode_amplitude(encoded, 11, 30)
+
+
+def test_amplitude_contract_fields_are_all_or_none():
+    with pytest.raises(ValueError, match="모두 함께"):
+        _signal_msg(amplitude_b64="AAAAAA==")
+
+
 # ── 3. 토픽 ─────────────────────────────────────────────────────────
 def test_topic_roundtrip():
     tenant, device = f"home-{uuid4()}", uuid4()

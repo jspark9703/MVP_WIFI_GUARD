@@ -31,5 +31,14 @@ class ApiSettings:
     def jwt_secret_is_default(self) -> bool:
         return self.jwt_secret == DEV_JWT_SECRET
 
+    @property
+    def jwt_secret_bytes(self) -> int:
+        return len(self.jwt_secret.encode("utf-8"))
+
+    def validate_security(self) -> None:
+        """Reject explicitly configured JWT keys that are too short for HS256."""
+        if not self.jwt_secret_is_default and self.jwt_secret_bytes < 32:
+            raise RuntimeError("JWT_SECRET must be at least 32 bytes")
+
 
 settings = ApiSettings.from_env()

@@ -85,15 +85,46 @@ def test_calibration_patch_logs(client):
     assert bad.status_code == 422
 
 
-def test_recipient_patch_and_test_not_implemented(client):
+def test_recipient_patch_and_test_delivery(client, monkeypatch):
+    class SuccessfulNotifier:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+        def send_test_now(self):
+            return True
+
+    monkeypatch.setattr("wifiguard_api.routers.recipients.EmailNotifier", SuccessfulNotifier)
+    monkeypatch.setattr("wifiguard_api.routers.recipients.NtfyNotifier", SuccessfulNotifier)
     h = signup_home(client, "h@test.io")
-    rec = client.post("/api/v1/recipients", json={"name": "n", "role": "FAMILY", "push": True, "ntfyTopic": "abc123"}, headers=h.h).json()
+    rec = client.post("/api/v1/recipients", json={
+        "name": "n", "role": "FAMILY", "push": True, "ntfyTopic": "abc123",
+        "email": "caregiver@example.com", "emailEnabled": True,
+    }, headers=h.h).json()
     p = client.patch(f"/api/v1/recipients/{rec['id']}", json={"sms": True, "phone": "010-0000-0000", "role": "ADMIN"}, headers=h.h)
     assert p.status_code == 200 and p.json()["sms"] is True and p.json()["role"] == "ADMIN" and p.json()["ntfyTopic"] == "abc123"
     t = client.post(f"/api/v1/recipients/{rec['id']}/test", headers=h.h)
-    assert t.status_code == 501 and t.json()["code"] == "NOT_IMPLEMENTED"
+    assert t.status_code == 200
+    assert t.json()["ok"] is True
+    assert [item["channel"] for item in t.json()["channels"]] == ["email", "push"]
     assert client.delete(f"/api/v1/recipients/{rec['id']}", headers=h.h).status_code == 204
     assert client.get("/api/v1/recipients", headers=h.h).json() == []
+
+
+def test_recipient_requires_channel_destination(client):
+    h = signup_home(client, "recipient-validation@test.io")
+    missing_email = client.post(
+        "/api/v1/recipients",
+        json={"name": "n", "role": "FAMILY", "emailEnabled": True},
+        headers=h.h,
+    )
+    assert missing_email.status_code == 400 and missing_email.json()["code"] == "EMAIL_REQUIRED"
+    missing_topic = client.post(
+        "/api/v1/recipients",
+        json={"name": "n", "role": "FAMILY", "push": True},
+        headers=h.h,
+    )
+    assert missing_topic.status_code == 400 and missing_topic.json()["code"] == "NTFY_TOPIC_REQUIRED"
 
 
 def test_account_patch_and_password_change(client):

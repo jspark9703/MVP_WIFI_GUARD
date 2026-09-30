@@ -158,7 +158,9 @@
           "enum": [
             "none",
             "causal_mode5",
-            "centered_mode5"
+            "centered_mode5",
+            "segmentation_a",
+            "segmentation_b"
           ],
           "title": "Postprocess",
           "type": "string"
