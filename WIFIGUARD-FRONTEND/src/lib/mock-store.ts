@@ -153,6 +153,8 @@ export interface Recipient {
   name: string;
   role: "가족" | "요양사" | "관리자";
   phone: string;
+  email: string;
+  emailEnabled: boolean;
   sms: boolean;
   push: boolean;
   ars: boolean;
@@ -438,6 +440,8 @@ let state: Store = {
       name: "김보호 (김순옥 아들)",
       role: "가족",
       phone: "010-1234-5678",
+      email: "guardian1@example.com",
+      emailEnabled: true,
       sms: true,
       push: true,
       ars: true,
@@ -448,6 +452,8 @@ let state: Store = {
       name: "박정민 (박영수 딸)",
       role: "가족",
       phone: "010-9876-5432",
+      email: "guardian2@example.com",
+      emailEnabled: true,
       sms: true,
       push: true,
       ars: false,
@@ -458,6 +464,8 @@ let state: Store = {
       name: "강은우 요양사",
       role: "요양사",
       phone: "010-2222-3333",
+      email: "caregiver@example.com",
+      emailEnabled: true,
       sms: true,
       push: true,
       ars: false,
@@ -468,6 +476,8 @@ let state: Store = {
       name: "김민지 요양사",
       role: "요양사",
       phone: "010-3333-4444",
+      email: "guardian3@example.com",
+      emailEnabled: true,
       sms: true,
       push: true,
       ars: false,
@@ -478,6 +488,8 @@ let state: Store = {
       name: "시설 당직실",
       role: "관리자",
       phone: "010-0000-0000",
+      email: "admin@example.com",
+      emailEnabled: true,
       sms: true,
       push: true,
       ars: true,

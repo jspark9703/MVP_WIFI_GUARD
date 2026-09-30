@@ -22,3 +22,19 @@ The compile-only evidence is recorded in
 `artifacts/verification/amfall-tx-firmware-offline-build-20260829.json`. That
 image must not be flashed: its flash size and credentials are deliberately not
 the reviewed hardware configuration.
+
+## ESP32-C5-DevKitC-1 / ESP32-C5-WROOM-1U-N32
+
+For the 32 MB ESP32-C5-WROOM-1U board, build with the dedicated hardware
+overlay and an untracked private credential overlay:
+
+```powershell
+idf.py -B build-devkitc1-wroom1u-n32-private `
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.esp32-c5-devkitc1-wroom1u-n32.defaults;sdkconfig.private.defaults" `
+  set-target esp32c5 build
+```
+
+The WROOM-1U module has an external-antenna connector. Attach a compatible
+2.4/5 GHz antenna to ANT1 before starting the 5 GHz channel-48 SoftAP or doing
+any RF validation. No external GPIO wiring is required for the transmitter;
+USB supplies power and UART logging.

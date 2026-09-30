@@ -293,6 +293,8 @@ export function useCreateRecipient(): MutationLike<RecipientInput, Recipient> {
       name: input.name,
       role: input.role,
       phone: input.phone ?? null,
+      email: input.email ?? null,
+      emailEnabled: input.emailEnabled ?? false,
       sms: input.sms ?? false,
       push: input.push ?? false,
       ars: input.ars ?? false,

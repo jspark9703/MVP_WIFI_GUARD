@@ -1,0 +1,25 @@
+FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    SSQ_GPU=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 \
+    NUMBA_CACHE_DIR=/tmp/wifiguard-numba-cache \
+    CUPY_CACHE_DIR=/tmp/wifiguard-cupy-cache
+WORKDIR /app
+
+COPY WIFIGUARD-BACKEND/packages/contracts /app/backend/packages/contracts
+COPY WIFIGUARD-BACKEND/services/csi-fall-segmentation /app/backend/services/csi-fall-segmentation
+COPY WIFIGUARD-BACKEND/services/inference /app/backend/services/inference
+COPY WIFIGUARD-RASPBERRY /app/raspberry
+
+RUN python -m pip install --no-cache-dir cupy-cuda12x && \
+    python -m pip install --no-cache-dir \
+    /app/backend/packages/contracts \
+    /app/backend/services/csi-fall-segmentation \
+    '/app/raspberry[cwt]' \
+    /app/backend/services/inference
+
+RUN mkdir -p /tmp/wifiguard-numba-cache /tmp/wifiguard-cupy-cache && \
+    chown 65532:65532 /tmp/wifiguard-numba-cache /tmp/wifiguard-cupy-cache
+
+USER 65532:65532
+CMD ["python", "-m", "wifiguard_inference"]

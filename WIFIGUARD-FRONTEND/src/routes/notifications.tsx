@@ -19,12 +19,14 @@ export const Route = createFileRoute("/notifications")({
   component: NotificationsPage,
 });
 
-/** 편집 폼 — 서버 RecipientIn/Patch 대응. 채널: phone(SMS/ARS) + ntfy(Push). */
+/** 편집 폼 — 서버 RecipientIn/Patch 대응. 채널: SMTP email + ntfy mobile push. */
 interface RecipientDraft {
   id?: string;
   name: string;
   role: RecipientRole;
   phone: string;
+  email: string;
+  emailEnabled: boolean;
   sms: boolean;
   push: boolean;
   ars: boolean;
@@ -43,6 +45,8 @@ function toDraft(r: Recipient): RecipientDraft {
     name: r.name,
     role: r.role,
     phone: r.phone ?? "",
+    email: r.email ?? "",
+    emailEnabled: r.emailEnabled,
     sms: r.sms,
     push: r.push,
     ars: r.ars,
@@ -77,6 +81,8 @@ function NotificationsPage() {
     name: "",
     role: "FAMILY",
     phone: "",
+    email: "",
+    emailEnabled: true,
     sms: true,
     push: true,
     ars: false,
@@ -91,6 +97,8 @@ function NotificationsPage() {
       name: d.name,
       role: d.role,
       phone: d.phone || null,
+      email: d.email || null,
+      emailEnabled: d.emailEnabled,
       sms: d.sms,
       push: d.push,
       ars: d.ars,
@@ -127,14 +135,13 @@ function NotificationsPage() {
   const testOne = async (r: Recipient) => {
     if (USE_MOCK) return toast("목업 모드에서는 발송하지 않습니다");
     try {
-      await apiFetch<void>(`/recipients/${r.id}/test`, { method: "POST" });
-      toast("테스트 발송");
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError && err.status === 501
-          ? "알림 발송은 다음 단계(알림 서비스)에서 제공됩니다"
-          : String(err),
+      const result = await apiFetch<{ channels: { channel: string }[] }>(
+        `/recipients/${r.id}/test`,
+        { method: "POST" },
       );
+      toast.success(`테스트 발송 성공 · ${result.channels.map((item) => item.channel).join(", ")}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError || err instanceof Error ? err.message : "발송 실패");
     }
   };
 
@@ -151,10 +158,22 @@ function NotificationsPage() {
           </p>
         </div>
 
-        <section className="grid grid-cols-3 gap-4">
-          <ChannelCard title="SMS" desc="문자 메시지로 알림 발송 (전화번호)" status="planned" />
-          <ChannelCard title="Push (ntfy)" desc="NTFY 앱 구독 코드로 푸시 알림" status="planned" />
-          <ChannelCard title="ARS Escalation" desc="미확인 시 자동 음성 전화" status="planned" />
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ChannelCard
+            title="Email (SMTP)"
+            desc="등록 이메일로 낙상 경보와 테스트 메일 발송"
+            status="active"
+          />
+          <ChannelCard
+            title="Mobile Push (ntfy)"
+            desc="NTFY 앱 구독 코드로 휴대폰 긴급 푸시"
+            status="active"
+          />
+          <ChannelCard
+            title="SMS · ARS"
+            desc="통신사 공급자 연동 후 활성화 예정"
+            status="planned"
+          />
         </section>
 
         {!isFacility && (
@@ -323,7 +342,7 @@ function RecipientTable({
           <tr className="text-[10px] text-muted border-b border-border bg-background/30 font-mono">
             <th className="p-3 font-medium uppercase">Name</th>
             <th className="p-3 font-medium uppercase">Role</th>
-            <th className="p-3 font-medium uppercase">Phone / ntfy</th>
+            <th className="p-3 font-medium uppercase">Contact</th>
             <th className="p-3 font-medium uppercase">Channels</th>
             <th className="p-3 font-medium uppercase">Status</th>
             <th className="p-3 font-medium uppercase text-right">Actions</th>
@@ -336,11 +355,13 @@ function RecipientTable({
               <td className="p-3 text-sm">{RECIPIENT_ROLE_LABEL[r.role]}</td>
               <td className="p-3 font-mono text-xs text-muted">
                 <div>{r.phone || "—"}</div>
+                {r.email && <div className="text-[10px]">{r.email}</div>}
                 {r.ntfyTopic && <div className="text-[10px]">ntfy: {r.ntfyTopic}</div>}
               </td>
               <td className="p-3">
                 <div className="flex gap-1">
                   {r.sms && <Chip>SMS</Chip>}
+                  {r.emailEnabled && <Chip>EMAIL</Chip>}
                   {r.push && <Chip>PUSH</Chip>}
                   {r.ars && <Chip>ARS</Chip>}
                 </div>
@@ -383,7 +404,6 @@ function RecipientTable({
   );
 }
 
-/** 채널 카드 — 실제 발송 서비스는 다음 단계. 장식용 ACTIVE 표시 대신 도입 예정을 명시한다. */
 function ChannelCard({
   title,
   desc,
@@ -483,8 +503,25 @@ function EditModal({
               className={cls}
             />
           </F>
+          <F label="이메일">
+            <input
+              type="email"
+              value={r.email}
+              onChange={(e) => setR({ ...r, email: e.target.value })}
+              placeholder="caregiver@example.com"
+              className={cls}
+            />
+          </F>
           <F label="채널">
-            <div className="flex gap-4 text-sm">
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={r.emailEnabled}
+                  onChange={(e) => setR({ ...r, emailEnabled: e.target.checked })}
+                />
+                Email
+              </label>
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -551,7 +588,12 @@ function EditModal({
           </button>
           <button
             onClick={() => onSave(r)}
-            disabled={!r.name || busy}
+            disabled={
+              !r.name ||
+              busy ||
+              (r.emailEnabled && !r.email.trim()) ||
+              (r.push && !r.ntfyTopic.trim())
+            }
             className="px-4 py-2 bg-primary text-primary-foreground rounded text-xs font-mono uppercase font-bold disabled:opacity-40"
           >
             Save

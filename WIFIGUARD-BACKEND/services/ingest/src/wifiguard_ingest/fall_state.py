@@ -35,8 +35,15 @@ class _Tracker:
         self.seen.append(identity)
 
         raw = int(result.proba_fall >= result.threshold)
-        self.recent.append(raw)
-        majority = len(self.recent) == MODE_SIZE and sum(self.recent) >= 3
+        if result.decision is None:
+            self.recent.append(raw)
+            majority = len(self.recent) == MODE_SIZE and sum(self.recent) >= 3
+            applied_postprocess = "causal_mode5"
+        else:
+            # segmentation_a/b는 모델 패키지가 현재·과거 window만 사용해 이미
+            # 인과 판정을 끝냈다. 여기에 mode-5를 다시 적용하면 의미와 지연이 바뀐다.
+            majority = bool(result.decision)
+            applied_postprocess = result.postprocess
         now = result.inferred_at.timestamp()
         new_fall = False
 
@@ -59,7 +66,7 @@ class _Tracker:
                 "detect_state": self.state,
                 "proba_fall": result.proba_fall,
                 "threshold": result.threshold,
-                "postprocess": "causal_mode5",
+                "postprocess": applied_postprocess,
                 "fall_count": self.fall_count,
                 "last_fall_time": self.last_fall_time,
             },

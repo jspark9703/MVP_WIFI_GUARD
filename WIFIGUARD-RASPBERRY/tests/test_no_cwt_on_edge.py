@@ -66,13 +66,16 @@ def test_edge_modules_import_without_cwt(without_cwt, module):
 
 
 def test_edge_signal_path_works_without_cwt(without_cwt):
-    """엣지가 실제로 하는 일 — 1-D 대표신호 생성 — 이 두 패키지 없이 끝나야 한다."""
+    """엣지의 30채널 창과 호환용 1-D 신호 생성은 CWT 패키지 없이 끝나야 한다."""
     features = importlib.import_module("wifiguard_edge.features")
     ws = features.extract_window_signal(*_window())
 
     assert ws.signal.ndim == 1
     assert ws.signal.dtype == np.float32
     assert ws.signal.nbytes < 4096, "업링크가 약 2KB 라는 전제"
+    assert ws.amplitude.ndim == 2
+    assert ws.amplitude.shape[1] == 30
+    assert ws.amplitude.dtype == np.float32
 
 
 def test_require_exact_cwt_blocks_startup_without_ssqueezepy(without_cwt):

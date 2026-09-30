@@ -23,6 +23,7 @@ from wifiguard_contracts.mqtt import (
     PresenceMsg,
     SignalMsg,
     TelemetryMsg,
+    encode_amplitude,
     encode_signal,
 )
 
@@ -77,6 +78,9 @@ def build_signal(
         seq=seq,
         signal_b64=encode_signal(window.signal),
         signal_len=int(len(window.signal)),
+        amplitude_b64=encode_amplitude(window.amplitude),
+        amplitude_rows=int(window.amplitude.shape[0]),
+        amplitude_cols=int(window.amplitude.shape[1]),
         fs_hz=window.fs_hz,
         window_samples=window.window_samples,
         window_span_s=window.window_span_s,

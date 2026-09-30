@@ -11,12 +11,17 @@ from pathlib import Path
 import numpy as np
 
 
-def representative_signal(fs_hz: float = 166.75, seconds: float = 3.0) -> np.ndarray:
+def representative_amplitude(fs_hz: float = 320.0, seconds: float = 3.0) -> np.ndarray:
     count = int(round(fs_hz * seconds))
     t = np.arange(count, dtype=np.float32) / np.float32(fs_hz)
-    base = 0.15 * np.sin(2 * np.pi * 1.7 * t) + 0.08 * np.sin(2 * np.pi * 7.5 * t)
-    burst = np.exp(-np.square((t - 1.5) / 0.12)) * np.sin(2 * np.pi * 22 * t)
-    return (base + 0.7 * burst).astype(np.float32)
+    carriers = np.arange(30, dtype=np.float32)[None, :]
+    base = 20 + 0.15 * np.sin(2 * np.pi * (1.7 + carriers / 80) * t[:, None])
+    burst = (
+        np.exp(-np.square((t - 1.5) / 0.12))[:, None]
+        * np.sin(2 * np.pi * 22 * t)[:, None]
+        * (0.4 + carriers / 60)
+    )
+    return (base + burst).astype(np.float32)
 
 
 def main() -> None:
@@ -25,21 +30,22 @@ def main() -> None:
     parser.add_argument("--device", default="cpu", choices=["auto", "cpu", "cuda", "mps"])
     args = parser.parse_args()
 
-    from wifiguard_edge.features.realtime import features_from_signal, require_exact_cwt
-    from wifiguard_serving.engine import FallInferenceEngine
+    from wifiguard_inference.features import LiveFeatureBuilder
+    from csi_fall_segmentation.engine import SegmentationInferenceEngine
 
-    require_exact_cwt()
+    builder = LiveFeatureBuilder()
+    builder.start()
     load_started = time.perf_counter()
-    engine = FallInferenceEngine(args.checkpoint, device=args.device)
+    engine = SegmentationInferenceEngine(args.checkpoint, device=args.device)
     engine.warmup()
     load_ms = (time.perf_counter() - load_started) * 1000
 
-    signal = representative_signal()
+    amplitude = representative_amplitude()
     feature_started = time.perf_counter()
-    features = features_from_signal(signal, 166.75)
+    features = builder.build(amplitude, 320.0)
     feature_ms = (time.perf_counter() - feature_started) * 1000
     infer_started = time.perf_counter()
-    probability = engine.predict(features.s3, features.acf)
+    probability = engine.predict(features.s3[0], features.acf[0])
     infer_ms = (time.perf_counter() - infer_started) * 1000
     if not 0 <= probability <= 1:
         raise SystemExit(f"invalid probability: {probability}")
@@ -50,7 +56,7 @@ def main() -> None:
         "model_version": engine.model_version,
         "threshold": engine.threshold,
         "s3_shape": list(features.s3.shape),
-        "acf_shape": list(features.acf.shape),
+        "pca_acf_shape": list(features.acf.shape),
         "probability": probability,
         "load_and_warm_ms": round(load_ms, 2),
         "feature_ms": round(feature_ms, 2),

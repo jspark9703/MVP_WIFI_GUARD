@@ -12,11 +12,13 @@ dependencies = [
   "kafka-python>=2.1",
   "wifiguard-db",
   "wifiguard-contracts",
+  "wifiguard-notify",
 ]
 
 [tool.uv.sources]
 wifiguard-db = { workspace = true }
 wifiguard-contracts = { workspace = true }
+wifiguard-notify = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

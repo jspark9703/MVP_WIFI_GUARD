@@ -5,8 +5,10 @@ from __future__ import annotations
 import re
 import uuid
 
+import pytest
 from sqlalchemy import select
 
+from wifiguard_api.config import ApiSettings
 from wifiguard_db.models import Facility, RefreshToken, TenantConfig, User
 
 
@@ -25,6 +27,12 @@ def _signup_root(client, email="root@test.io", facility_name="Test Care"):
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_explicit_jwt_secret_requires_32_bytes():
+    configured = ApiSettings("too-short", 15, 14, ".*", True)
+    with pytest.raises(RuntimeError, match="at least 32 bytes"):
+        configured.validate_security()
 
 
 def test_signup_home_returns_tokens_and_me(client, db):
@@ -157,4 +165,4 @@ def test_health_and_ports(client):
     h = client.get("/health")
     assert h.status_code == 200, h.text
     assert h.json()["checks"]["database"]["ok"] is True
-    assert h.json()["checks"]["database"]["schema"] == "0001"
+    assert h.json()["checks"]["database"]["schema"] == "0003"

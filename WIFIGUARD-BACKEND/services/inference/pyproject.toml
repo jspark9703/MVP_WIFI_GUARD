@@ -5,9 +5,9 @@ description = "WIFI-GUARD Kafka signal-to-inference worker"
 requires-python = ">=3.11"
 dependencies = [
   "kafka-python>=2.1",
+  "csi-fall-segmentation",
   "wifiguard-contracts",
   "wifiguard-edge[cwt]",
-  "wifiguard-serving",
 ]
 
 [dependency-groups]
@@ -24,9 +24,9 @@ build-backend = "hatchling.build"
 packages = ["src/wifiguard_inference"]
 
 [tool.uv.sources]
+csi-fall-segmentation = { path = "../csi-fall-segmentation", editable = true }
 wifiguard-contracts = { path = "../../packages/contracts", editable = true }
 wifiguard-edge = { path = "../../../WIFIGUARD-RASPBERRY", editable = true }
-wifiguard-serving = { path = "../model-serving", editable = true }
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "../model-serving/src", "../../packages/contracts/src", "../../../WIFIGUARD-RASPBERRY/src"]

@@ -8,10 +8,8 @@ presence, signal, telemetry 한 건씩 발행한 뒤 Kafka에서 같은 device_i
 from __future__ import annotations
 
 import argparse
-import base64
 import importlib.util
 import json
-import struct
 import sys
 import time
 from datetime import UTC, datetime
@@ -36,6 +34,8 @@ from wifiguard_contracts.mqtt import (  # noqa: E402
     PresenceMsg,
     SignalMsg,
     TelemetryMsg,
+    encode_amplitude,
+    encode_signal,
 )
 
 
@@ -98,8 +98,20 @@ def main() -> int:
     bridge = _load_bridge_class()(settings)
     publisher = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"wg-mock-{device_id}")
 
-    signal_values = [float(index) / 10.0 for index in range(16)]
-    signal_b64 = base64.b64encode(struct.pack("<16f", *signal_values)).decode("ascii")
+    import numpy as np
+
+    sample_count = 960
+    sample_rate_hz = 320.0
+    timeline = np.arange(sample_count, dtype=np.float32) / sample_rate_hz
+    amplitude = np.stack(
+        [
+            np.sin(2 * np.pi * (0.7 + index * 0.03) * timeline)
+            + 0.1 * np.cos(2 * np.pi * (2.0 + index * 0.02) * timeline)
+            for index in range(30)
+        ],
+        axis=1,
+    ).astype(np.float32)
+    signal = amplitude.mean(axis=1, dtype=np.float32)
     messages = {
         "presence": PresenceMsg(
             tenant_id=tenant,
@@ -114,18 +126,21 @@ def main() -> int:
             device_id=device_id,
             ts=now,
             seq=2,
-            signal_b64=signal_b64,
-            signal_len=16,
-            fs_hz=64.0,
-            window_samples=16,
-            window_span_s=0.234375,
-            selected_subcarrier_count=8,
-            selected_stream_count=1,
+            signal_b64=encode_signal(signal),
+            signal_len=sample_count,
+            amplitude_b64=encode_amplitude(amplitude),
+            amplitude_rows=sample_count,
+            amplitude_cols=30,
+            fs_hz=sample_rate_hz,
+            window_samples=sample_count,
+            window_span_s=3.0,
+            selected_subcarrier_count=30,
+            selected_stream_count=30,
             selected_pc_indices="0",
             candidate_pc_count=1,
             selected_pc_count=1,
-            input_frames=16,
-            input_subcarriers=8,
+            input_frames=sample_count,
+            input_subcarriers=245,
             signal_q=1.0,
             presence_state="present",
             gate_reason="present",

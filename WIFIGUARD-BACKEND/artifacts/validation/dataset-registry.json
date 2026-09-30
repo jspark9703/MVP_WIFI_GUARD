@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "registered_at": "2026-09-23T06:04:09.055748+00:00",
+  "package_root": "<external-model-package>",
+  "archive": null,
+  "archive_sha256": null,
+  "checkpoint_sha256": "7cb0b7436f0bc7f93b69e6c39678ebc5a31c707e2777244ec7973a9ecfa68a41",
+  "checkpoint_bytes": 93539875,
+  "checkpoint_destination": "weights\\temporal_segmentation_fixed_delay.pt",
+  "feature_recordings": 77,
+  "feature_bytes": 781472228,
+  "label_recordings": 77,
+  "label_bytes": 54563,
+  "feature_windows": 15320,
+  "generalization_validated": false,
+  "generalization_note": "The bundled 77 recordings were used for training; they validate execution, not external generalization."
+}

@@ -1,4 +1,4 @@
-"""Publish a contract-valid synthetic SignalMsg and wait for its inference result.
+"""Publish contract-valid segmentation SignalMsg values and await results.
 
 This verifies Kafka routing and actual model execution, not model accuracy.
 """
@@ -14,9 +14,9 @@ from uuid import UUID, uuid4
 from kafka import KafkaConsumer, KafkaProducer
 from wifiguard_contracts import topics
 from wifiguard_contracts.kafka import FeatureRecord, InferenceResult
-from wifiguard_contracts.mqtt import SignalMsg, encode_signal
+from wifiguard_contracts.mqtt import SignalMsg, encode_amplitude, encode_signal
 
-from validate_model_checkpoint import representative_signal
+from validate_model_checkpoint import representative_amplitude
 
 
 def main() -> None:
@@ -25,6 +25,7 @@ def main() -> None:
     parser.add_argument("--tenant", required=True)
     parser.add_argument("--device", required=True, type=UUID)
     parser.add_argument("--timeout", type=float, default=60)
+    parser.add_argument("--count", type=int, default=4)
     args = parser.parse_args()
 
     consumer = KafkaConsumer(
@@ -36,59 +37,80 @@ def main() -> None:
         consumer_timeout_ms=1000,
     )
     producer = KafkaProducer(bootstrap_servers=args.bootstrap.split(","))
-    seq = int(time.time_ns() % 2_000_000_000)
+    # Establish the result-topic assignment and its "latest" positions before
+    # publishing. Otherwise a fast model can produce all results before the
+    # first consumer poll and the validator can incorrectly time out.
+    assignment_deadline = time.monotonic() + 10
+    while not consumer.assignment() and time.monotonic() < assignment_deadline:
+        consumer.poll(timeout_ms=250)
+    if not consumer.assignment():
+        raise TimeoutError("inference-result consumer assignment was not established")
+    for partition in consumer.assignment():
+        consumer.position(partition)
+
+    first_seq = int(time.time_ns() % 2_000_000_000)
     now = datetime.now(UTC)
-    signal = representative_signal()
-    message = SignalMsg(
-        device_id=args.device,
-        tenant_id=args.tenant,
-        ts=now,
-        seq=seq,
-        signal_b64=encode_signal(signal),
-        signal_len=len(signal),
-        fs_hz=166.75,
-        window_samples=len(signal),
-        window_span_s=3.0,
-        selected_subcarrier_count=30,
-        selected_stream_count=8,
-        selected_pc_indices="0",
-        candidate_pc_count=1,
-        selected_pc_count=1,
-        input_frames=len(signal),
-        input_subcarriers=245,
-        signal_q=None,
-        presence_state="present",
-        gate_reason="forced",
-    )
-    record = FeatureRecord(
-        received_at=now,
-        source_topic=topics.leaf_topic(args.tenant, args.device, "signal"),
-        tenant_id=args.tenant,
-        device_id=args.device,
-        payload=message,
-    )
-    producer.send(
-        topics.KAFKA_FEATURE_STREAM,
-        key=str(args.device).encode(),
-        value=record.model_dump_json().encode(),
-    ).get(timeout=10)
+    amplitude = representative_amplitude()
+    signal = amplitude.mean(axis=1).astype("float32")
+    expected = set(range(first_seq, first_seq + args.count))
+    for seq in sorted(expected):
+        message = SignalMsg(
+            device_id=args.device,
+            tenant_id=args.tenant,
+            ts=now,
+            seq=seq,
+            signal_b64=encode_signal(signal),
+            signal_len=len(signal),
+            amplitude_b64=encode_amplitude(amplitude),
+            amplitude_rows=amplitude.shape[0],
+            amplitude_cols=amplitude.shape[1],
+            fs_hz=320.0,
+            window_samples=len(amplitude),
+            window_span_s=3.0,
+            selected_subcarrier_count=30,
+            selected_stream_count=30,
+            selected_pc_indices="0",
+            candidate_pc_count=1,
+            selected_pc_count=1,
+            input_frames=len(amplitude),
+            input_subcarriers=245,
+            signal_q=None,
+            presence_state="present",
+            gate_reason="forced",
+        )
+        record = FeatureRecord(
+            received_at=now,
+            source_topic=topics.leaf_topic(args.tenant, args.device, "signal"),
+            tenant_id=args.tenant,
+            device_id=args.device,
+            payload=message,
+        )
+        producer.send(
+            topics.KAFKA_FEATURE_STREAM,
+            key=str(args.device).encode(),
+            value=record.model_dump_json().encode(),
+        ).get(timeout=10)
     producer.flush()
 
     deadline = time.monotonic() + args.timeout
+    matched: dict[int, InferenceResult] = {}
     try:
         while time.monotonic() < deadline:
             for item in consumer:
                 result = InferenceResult.model_validate_json(item.value)
-                if result.device_id == args.device and result.seq == seq:
+                if result.device_id == args.device and result.seq in expected:
+                    matched[result.seq] = result
+                if set(matched) == expected:
+                    ordered = [matched[seq] for seq in sorted(matched)]
                     print(json.dumps({
                         "status": "LIVE_MODEL_KAFKA_PASS",
-                        "device_id": str(result.device_id),
-                        "seq": result.seq,
-                        "proba_fall": result.proba_fall,
-                        "threshold": result.threshold,
-                        "model_version": result.model_version,
-                        "feature_ms": result.feature_ms,
-                        "infer_ms": result.infer_ms,
+                        "device_id": str(args.device),
+                        "sequences": [result.seq for result in ordered],
+                        "probabilities": [result.proba_fall for result in ordered],
+                        "threshold": ordered[0].threshold,
+                        "model_version": ordered[0].model_version,
+                        "mean_feature_ms": sum(result.feature_ms or 0 for result in ordered) / len(ordered),
+                        "mean_infer_ms": sum(result.infer_ms or 0 for result in ordered) / len(ordered),
                     }, ensure_ascii=False, indent=2))
                     return
         raise TimeoutError("matching csi-inference-result was not received")

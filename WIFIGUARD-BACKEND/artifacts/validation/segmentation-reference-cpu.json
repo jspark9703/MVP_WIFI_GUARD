@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "device": "cpu",
+  "checkpoint_sha256": "7cb0b7436f0bc7f93b69e6c39678ebc5a31c707e2777244ec7973a9ecfa68a41",
+  "checks": {
+    "window_starts_match": true,
+    "s3_max_abs_error_at_most_0_0003": true,
+    "acf_max_abs_error_at_most_0_0003": true,
+    "raw_probability_max_abs_error_at_most_0_0003": true,
+    "raw_center_max_abs_error_at_most_0_0003": true,
+    "feature_probability_max_abs_error_at_most_0_0003": true,
+    "feature_center_max_abs_error_at_most_0_0003": true
+  },
+  "measurements": {
+    "raw_window_count": 2,
+    "feature_example_window_count": 161,
+    "s3_max_abs_error": 0.0002440810203552246,
+    "acf_max_abs_error": 0.00024271011352539062,
+    "raw_probability_max_abs_error": 3.4293634598725475e-08,
+    "raw_center_max_abs_error": 2.5099723188759526e-08,
+    "feature_probability_max_abs_error": 0.00024276971817016602,
+    "feature_center_max_abs_error": 0.00024318695068359375
+  }
+}

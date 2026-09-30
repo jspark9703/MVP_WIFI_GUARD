@@ -1,0 +1,23 @@
+groups:
+  - name: wifiguard-resource-alerts
+    rules:
+      - alert: HostCpuSustainedHigh
+        expr: avg_over_time(wifiguard_host_cpu_percent[5m]) > 85
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "WIFI-GUARD host CPU above 85% for five minutes"}
+      - alert: HostMemoryHigh
+        expr: wifiguard_host_memory_used_bytes / wifiguard_host_memory_total_bytes > 0.9
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "WIFI-GUARD host memory above 90%"}
+      - alert: HostDiskHigh
+        expr: wifiguard_host_disk_used_bytes / wifiguard_host_disk_total_bytes > 0.85
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "WIFI-GUARD storage above 85%"}
+      - alert: GpuMemoryHigh
+        expr: wifiguard_gpu_memory_used_mib / wifiguard_gpu_memory_total_mib > 0.9
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "WIFI-GUARD GPU memory above 90%"}

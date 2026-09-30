@@ -1,0 +1,149 @@
+{
+  "id": "wifiguard-capacity-review",
+  "title": "WIFI-GUARD model pipeline capacity",
+  "generatedAt": "2026-09-23T07:15:22Z",
+  "status": "observed-and-estimated",
+  "buildStatus": "complete",
+  "surface": "dashboard",
+  "queries": {
+    "pipelineChecks": {
+      "rows": [
+        {"stage": "Model import", "status": "PASS", "evidence": "Checkpoint SHA-256 and 77 feature/label recordings verified", "scope": "observed"},
+        {"stage": "Reference parity", "status": "PASS", "evidence": "CPU outputs within 0.0003 absolute error", "scope": "observed"},
+        {"stage": "Training smoke", "status": "PASS", "evidence": "CUDA forward/backward and checkpoint write completed", "scope": "observed"},
+        {"stage": "Fine-tuning", "status": "PASS", "evidence": "Frozen-encoder CUDA step registered as MLflow model version 2", "scope": "observed"},
+        {"stage": "Software E2E", "status": "PASS", "evidence": "MQTT to Kafka to model to persistence to API completed", "scope": "observed"},
+        {"stage": "Physical hardware", "status": "NOT RUN", "evidence": "ESP32/Raspberry Pi transport intentionally excluded from this validation", "scope": "not-observed"},
+        {"stage": "Generalization", "status": "NOT PROVEN", "evidence": "Bundled recordings were part of model training", "scope": "not-observed"}
+      ],
+      "source": {
+        "label": "Local validation artifacts",
+        "tables": ["artifacts/validation/*.json"],
+        "executedAt": "2026-09-23T06:31:29Z",
+        "caveats": ["Hardware transport and accuracy on independent recordings were not tested."],
+        "metricDefinitions": [{"label": "Pipeline stage status", "definition": "Outcome of a bounded, locally executed validation step."}]
+      }
+    },
+    "resourceProfiles": {
+      "rows": [
+        {"workload": "GPU inference", "cpuCores": 1.062, "ramGiB": 1.452, "gpuVramDeltaGiB": 0.599, "gpuUtilPercent": 40, "diskDeltaGiB": 0.010, "elapsedSeconds": 13.174, "scope": "observed"},
+        {"workload": "GPU training smoke", "cpuCores": 1.002, "ramGiB": 1.482, "gpuVramDeltaGiB": 0.762, "gpuUtilPercent": 40, "diskDeltaGiB": 0.087, "elapsedSeconds": 14.108, "scope": "observed"},
+        {"workload": "GPU fine-tune smoke", "cpuCores": 1.480, "ramGiB": 1.465, "gpuVramDeltaGiB": 0.422, "gpuUtilPercent": 38, "diskDeltaGiB": 0.087, "elapsedSeconds": 13.793, "scope": "observed"}
+      ],
+      "source": {
+        "label": "Process and host resource profiler",
+        "tables": ["artifacts/resource-profiles/*.json"],
+        "executedAt": "2026-09-23T06:31:29Z",
+        "caveats": ["CPU and RSS cover the process tree; GPU and VRAM are host-level samples and can overlap other GPU workloads.", "Smoke training used four windows and one optimizer step; it is not a full-dataset duration estimate."],
+        "metricDefinitions": [
+          {"label": "Peak CPU cores", "definition": "Peak process-tree CPU percent divided by 100."},
+          {"label": "Peak RAM", "definition": "Peak process-tree resident memory."},
+          {"label": "GPU VRAM delta", "definition": "Peak sampled host GPU memory minus the pre-command baseline."}
+        ]
+      }
+    },
+    "inferencePerformance": {
+      "rows": [
+        {"metric": "Steady feature median", "value": 34.535, "unit": "ms/window", "scope": "observed"},
+        {"metric": "Steady feature P95", "value": 37.242, "unit": "ms/window", "scope": "observed"},
+        {"metric": "Inference median", "value": 2.720, "unit": "ms/window", "scope": "observed"},
+        {"metric": "First GPU feature batch", "value": 5479.019, "unit": "ms/4 windows", "scope": "observed"},
+        {"metric": "Target stream", "value": 4, "unit": "windows/s", "scope": "requirement"}
+      ],
+      "source": {
+        "label": "CUDA segmentation benchmark",
+        "tables": ["artifacts/resource-profiles/inference-gpu-benchmark.json"],
+        "executedAt": "2026-09-23T06:25:16Z",
+        "caveats": ["The first GPU feature batch includes JIT/kernel warm-up; steady-state measurements exclude that first batch."],
+        "metricDefinitions": [{"label": "Window throughput target", "definition": "One 3-second inference window every 0.25 seconds."}]
+      }
+    },
+    "hostSnapshot": {
+      "rows": [
+        {"metric": "CPU", "used": 19.5, "capacity": 100, "unit": "%", "scope": "observed"},
+        {"metric": "RAM", "used": 36.113, "capacity": 63.795, "unit": "GiB", "scope": "observed"},
+        {"metric": "GPU", "used": 3.0, "capacity": 100, "unit": "%", "scope": "observed"},
+        {"metric": "VRAM", "used": 2.037, "capacity": 15.992, "unit": "GiB", "scope": "observed"},
+        {"metric": "Disk", "used": 1722.357, "capacity": 1861.045, "unit": "GiB", "scope": "observed"}
+      ],
+      "source": {
+        "label": "WIFI-GUARD live host monitor",
+        "tables": ["http://127.0.0.1:9108/api/snapshot"],
+        "executedAt": "2026-09-23T06:31:29Z",
+        "caveats": ["This is one point-in-time host snapshot, not a workload-isolated profile.", "Disk utilization is 92.5% and requires cleanup or expansion before long retention runs."],
+        "metricDefinitions": [{"label": "Host utilization", "definition": "Direct host telemetry sampled by psutil and nvidia-smi."}]
+      }
+    },
+    "awsEnvelope": {
+      "rows": [
+        {"resource": "vCPU", "observed": 1.48, "recommended": 3, "unit": "cores", "scope": "estimate"},
+        {"resource": "RAM", "observed": 1.482, "recommended": 4, "unit": "GiB", "scope": "estimate"},
+        {"resource": "GPU VRAM", "observed": 0.762, "recommended": 2, "unit": "GiB", "scope": "estimate"},
+        {"resource": "Persistent storage", "observed": 1.599, "recommended": 10, "unit": "GiB", "scope": "estimate"}
+      ],
+      "source": {
+        "label": "AWS-neutral sizing envelope",
+        "tables": ["artifacts/validation/aws-resource-envelope.json"],
+        "executedAt": "2026-09-23T06:25:23Z",
+        "caveats": ["Recommendations apply 1.5x headroom and retain ten checkpoints.", "Storage excludes Kafka retention, logs, backups and future datasets.", "No AWS instance type, region price or concurrency claim is made."],
+        "metricDefinitions": [{"label": "Recommended capacity", "definition": "Rounded resource envelope derived from measured local peaks with 1.5x headroom."}]
+      }
+    },
+    "awsCostScenarios": {
+      "rows": [
+        {"scenario": "Pilot all-in-one", "monthlyBaseUsd": 512.73, "monthlyBufferedUsd": 589.64, "monthlyBufferedKrw": 825495, "architecture": "1× g4dn.xlarge; self-managed Kafka/PostgreSQL; no HA", "scope": "estimate"},
+        {"scenario": "Managed baseline", "monthlyBaseUsd": 1312.17, "monthlyBufferedUsd": 1509.00, "monthlyBufferedKrw": 2112594, "architecture": "1× g4dn.xlarge; RDS Single-AZ; MSK Serverless", "scope": "estimate"},
+        {"scenario": "Managed HA", "monthlyBaseUsd": 2011.97, "monthlyBufferedUsd": 2313.77, "monthlyBufferedKrw": 3239272, "architecture": "2× g4dn.xlarge; RDS Multi-AZ; MSK Serverless", "scope": "estimate"}
+      ],
+      "source": {
+        "label": "AWS Seoul monthly planning estimate",
+        "tables": [
+          "artifacts/validation/aws-cost-estimate.json",
+          "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv",
+          "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-2/index.csv",
+          "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonMSK/current/ap-northeast-2/index.csv",
+          "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/ap-northeast-2/index.csv",
+          "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/ap-northeast-2/index.csv"
+        ],
+        "executedAt": "2026-09-23T07:15:22Z",
+        "caveats": ["Estimates assume 730 hours/month, 24×7 operation, 15% contingency, and a planning rate of 1 USD = 1,400 KRW.", "Network, load balancing, DNS, and request costs are scenario allowances because final topology and traffic are unknown.", "Taxes, Support plans, device concurrency growth, and live exchange-rate movement are excluded."],
+        "metricDefinitions": [
+          {"label": "Monthly base cost", "definition": "Sum of modeled AWS unit prices and explicit scenario usage assumptions before contingency."},
+          {"label": "Monthly buffered cost", "definition": "Monthly base cost multiplied by 1.15 for planning uncertainty."}
+        ]
+      }
+    },
+    "awsUnitPrices": {
+      "rows": [
+        {"service": "EC2 g4dn.xlarge On-Demand", "unitPriceUsd": 0.647, "unit": "instance-hour", "monthlyAtAssumptionUsd": 472.31, "note": "One 24×7 GPU node; dominant pilot cost", "scope": "official-price"},
+        {"service": "EC2 g4dn.xlarge 1yr No Upfront", "unitPriceUsd": 0.407, "unit": "instance-hour", "monthlyAtAssumptionUsd": 297.11, "note": "37.1% compute saving after commitment", "scope": "official-price"},
+        {"service": "RDS PostgreSQL db.t4g.medium Single-AZ", "unitPriceUsd": 0.102, "unit": "instance-hour", "monthlyAtAssumptionUsd": 74.46, "note": "Managed database compute only", "scope": "official-price"},
+        {"service": "MSK Serverless cluster", "unitPriceUsd": 0.92, "unit": "cluster-hour", "monthlyAtAssumptionUsd": 671.60, "note": "Largest managed-service fixed cost", "scope": "official-price"},
+        {"service": "EBS gp3", "unitPriceUsd": 0.0912, "unit": "GB-month", "monthlyAtAssumptionUsd": 9.12, "note": "100 GB pilot volume", "scope": "official-price"}
+      ],
+      "source": {
+        "label": "AWS Price List for Asia Pacific (Seoul)",
+        "tables": ["https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-northeast-2/index.csv", "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/ap-northeast-2/index.csv", "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonMSK/current/ap-northeast-2/index.csv"],
+        "executedAt": "2026-09-23T07:15:22Z",
+        "caveats": ["Rates can change; refresh the estimator or AWS Pricing Calculator before purchase.", "Reserved pricing requires a one-year commitment and is shown only as sensitivity."],
+        "metricDefinitions": [{"label": "Modeled monthly cost", "definition": "Unit price multiplied by the quantity shown in the planning scenario."}]
+      }
+    },
+    "modelInventory": {
+      "rows": [
+        {"item": "Checkpoint", "value": "7cb0b7436f0b…", "detail": "93,539,875 bytes"},
+        {"item": "Feature recordings", "value": "77", "detail": "15,320 windows; 781,472,228 bytes"},
+        {"item": "Label recordings", "value": "77", "detail": "54,563 bytes"},
+        {"item": "Model", "value": "Dual ResNet18", "detail": "23,357,481 parameters"},
+        {"item": "MLflow", "value": "version 2", "detail": "wifiguard-inhouse-segmentation"}
+      ],
+      "source": {
+        "label": "Imported package manifest and registry",
+        "tables": ["model-manifests/inhouse-segmentation.json", "artifacts/validation/dataset-registry.json"],
+        "executedAt": "2026-09-23T06:31:29Z",
+        "caveats": ["The checkpoint file remains an external runtime artifact and is intentionally excluded from Git."],
+        "metricDefinitions": [{"label": "Model inventory", "definition": "Identity and bounded size metadata for the imported model package."}]
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+route:
+  receiver: local-log
+  group_by: [alertname]
+  group_wait: 10s
+  group_interval: 1m
+receivers:
+  - name: local-log

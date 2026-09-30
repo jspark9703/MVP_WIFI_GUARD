@@ -33,6 +33,10 @@ class FakeNotifier:
         return {"id": self.kwargs["recipient_id"], "sent_count": 0}
 
 
+class FakeEmailNotifier(FakeNotifier):
+    instances = []
+
+
 def test_confirmed_inference_is_persisted_once(client, db):
     home = signup_home(client, "inference-fall@demo.io")
     device = create_device(client, home, connection="MQTT", name="침실 센서")
@@ -99,3 +103,37 @@ def test_persisted_fall_is_routed_to_matching_push_recipient(client, db):
     assert notifier.kwargs["topic"] == "private-topic"
     assert notifier.messages[0][0] == 1
     assert notifier.messages[0][1] == 0.93
+
+
+def test_persisted_fall_is_routed_to_email_and_push(client, db):
+    FakeNotifier.instances.clear()
+    FakeEmailNotifier.instances.clear()
+    home = signup_home(client, "inference-multichannel@demo.io")
+    device = create_device(client, home, connection="MQTT", name="침실 센서")
+    create_resident(client, home, device_id=device["id"], name="홍길동", room="침실")
+    db.add(Recipient(
+        name="보호자",
+        role="FAMILY",
+        email="caregiver@example.com",
+        email_enabled=True,
+        push=True,
+        ntfy_server="https://ntfy.example",
+        ntfy_topic="private-topic",
+        owner_user_id=UUID(home.user["id"]),
+    ))
+    db.commit()
+    now = datetime.now(UTC)
+    result = InferenceResult(
+        tenant_id=f"home-{home.user['id']}", device_id=UUID(device["id"]), ts=now,
+        seq=100, proba_fall=0.94, threshold=0.5, postprocess="none",
+        inferred_at=now, model_version="checkpoint:test",
+    )
+    assert FallEventSink().record(result)
+    dispatcher = FallNotificationDispatcher(
+        notifier_factory=FakeNotifier,
+        email_notifier_factory=FakeEmailNotifier,
+    )
+    assert dispatcher.notify(result) == 2
+    assert len(FakeNotifier.instances) == 1
+    assert len(FakeEmailNotifier.instances) == 1
+    assert FakeEmailNotifier.instances[0].kwargs["email"] == "caregiver@example.com"

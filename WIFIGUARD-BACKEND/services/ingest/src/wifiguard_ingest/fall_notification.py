@@ -6,19 +6,25 @@ import logging
 import threading
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from wifiguard_contracts.kafka import InferenceResult
-from wifiguard_notify import NtfyNotifier
+from wifiguard_notify import EmailNotifier, NtfyNotifier
 
 log = logging.getLogger("ingest.fall_notification")
 
 
 class FallNotificationDispatcher:
-    """One notifier thread per configured ntfy recipient, created on demand."""
+    """One notifier thread per recipient channel, created on demand."""
 
-    def __init__(self, session_factory=None, notifier_factory=NtfyNotifier) -> None:
+    def __init__(
+        self,
+        session_factory=None,
+        notifier_factory=NtfyNotifier,
+        email_notifier_factory=EmailNotifier,
+    ) -> None:
         self._session_factory = session_factory
         self._notifier_factory = notifier_factory
+        self._email_notifier_factory = email_notifier_factory
         self._notifiers: dict[str, Any] = {}
         self._lock = threading.Lock()
         self._queued = 0
@@ -63,8 +69,10 @@ class FallNotificationDispatcher:
                         scope,
                         resident_filter,
                         Recipient.enabled.is_(True),
-                        Recipient.push.is_(True),
-                        Recipient.ntfy_topic.is_not(None),
+                        or_(
+                            and_(Recipient.push.is_(True), Recipient.ntfy_topic.is_not(None)),
+                            and_(Recipient.email_enabled.is_(True), Recipient.email.is_not(None)),
+                        ),
                     )
                 ).scalars().all()
                 count_filter = (
@@ -78,21 +86,42 @@ class FallNotificationDispatcher:
 
             queued = 0
             for recipient in recipients:
-                key = str(recipient.id)
-                with self._lock:
-                    notifier = self._notifiers.get(key)
-                    if notifier is None:
-                        notifier = self._notifier_factory(
-                            recipient_id=key,
-                            topic=recipient.ntfy_topic,
-                            server=recipient.ntfy_server or "https://ntfy.sh",
-                            display_name=recipient.name,
-                            notify_fall_enabled=recipient.push,
+                recipient_id = str(recipient.id)
+                channels: list[tuple[str, Any]] = []
+                if recipient.push and recipient.ntfy_topic:
+                    channels.append(
+                        (
+                            f"push:{recipient_id}",
+                            lambda: self._notifier_factory(
+                                recipient_id=recipient_id,
+                                topic=recipient.ntfy_topic,
+                                server=recipient.ntfy_server or "https://ntfy.sh",
+                                display_name=recipient.name,
+                                notify_fall_enabled=True,
+                            ),
                         )
-                        notifier.start()
-                        self._notifiers[key] = notifier
-                notifier.notify_fall(fall_count, result.proba_fall, result.ts.timestamp())
-                queued += 1
+                    )
+                if recipient.email_enabled and recipient.email:
+                    channels.append(
+                        (
+                            f"email:{recipient_id}",
+                            lambda: self._email_notifier_factory(
+                                recipient_id=recipient_id,
+                                email=recipient.email,
+                                display_name=recipient.name,
+                                notify_fall_enabled=True,
+                            ),
+                        )
+                    )
+                for key, factory in channels:
+                    with self._lock:
+                        notifier = self._notifiers.get(key)
+                        if notifier is None:
+                            notifier = factory()
+                            notifier.start()
+                            self._notifiers[key] = notifier
+                    notifier.notify_fall(fall_count, result.proba_fall, result.ts.timestamp())
+                    queued += 1
             with self._lock:
                 self._queued += queued
                 self._last_error = None

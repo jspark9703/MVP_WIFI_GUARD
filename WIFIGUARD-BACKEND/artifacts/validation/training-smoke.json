@@ -1,0 +1,29 @@
+{
+  "status": "passed",
+  "mode": "train",
+  "device": "cuda",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "dataset_examples": 4,
+  "steps": 1,
+  "initial_loss": 0.44279831647872925,
+  "final_loss": 0.44279831647872925,
+  "elapsed_seconds": 0.8742948999861255,
+  "examples_per_second": 2.287557665075867,
+  "trainable_parameters": 23338241,
+  "checkpoint_bytes": 93528716,
+  "peak_gpu_memory_bytes": 468119040,
+  "mlflow_run_id": null,
+  "registered_model": null,
+  "registered_model_version": null,
+  "config": {
+    "mode": "train",
+    "epochs": 1,
+    "batch_size": 2,
+    "learning_rate": 0.0001,
+    "max_recordings": 1,
+    "max_windows": 4,
+    "max_batches": 1,
+    "freeze_encoders": false,
+    "seed": 20260923
+  }
+}

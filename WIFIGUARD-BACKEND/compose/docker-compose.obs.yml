@@ -5,7 +5,7 @@
 #   Evidently Drift Score → Prometheus Exporter → scrape
 #     → AlertManager (임계 초과) → Airflow Webhook → model_retrain_dag
 #
-# ⚠ 미검증. 스크랩 대상(Consumer 3 exporter)이 아직 존재하지 않는다.
+# 호스트에서는 먼저 `python tools/resource_monitor.py --host 0.0.0.0`을 실행한다.
 
 name: wifiguard-dev
 
@@ -18,6 +18,19 @@ services:
       - ../infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../infra/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    ports:
+      - "8081:8080"
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
 
   alertmanager:
     image: prom/alertmanager:v0.28.0
